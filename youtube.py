@@ -90,11 +90,13 @@ class YouTubeDownloader(BaseDownloader):
             "no_warnings": True,
             "socket_timeout": 30,
             "source_address": "0.0.0.0",
-            "user_agent": "Mozilla/5.0",
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "no_check_certificate": True,
             "prefer_insecure": True,
             "noplaylist": True,
+            "ignoreerrors": True,  # ✅ Игнорировать ошибки
         }
+        
         if is_search:
             options["extract_flat"] = True
             
@@ -110,19 +112,34 @@ class YouTubeDownloader(BaseDownloader):
                 combined_filter = " & ".join(filters)
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
-            options["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+            # ✅ Более гибкий формат
+            options["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best"
             options["postprocessors"] = [
-                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "128"}
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "128",
+                }
             ]
             options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")
+            
+            # Cookies
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)
             
-            options["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
+            # ✅ Использовать Android клиент (обходит многие блокировки)
+            options["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["android", "web"],
+                    "skip": ["dash", "hls"],
+                }
+            }
+            
             options["http_headers"] = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
                 "Accept-Language": "en-US,en;q=0.9",
             }
+        
         return options
 
     async def _extract_info(self, query: str, ydl_opts: Dict) -> Dict:
