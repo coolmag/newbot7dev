@@ -18,15 +18,7 @@ from models import TrackInfo, DownloadResult, Source # Импортируем и
 logger = logging.getLogger("radio")
 
 
-GENRES = [
-    "rock hits",
-    "orchestral",
-    "ambient",
-    "tropical house",
-    "synthwave",
-    "hip hop",
-    "jazz",
-]
+
 
 
 @dataclass
@@ -181,10 +173,17 @@ class RadioManager:
                 # Используем новый YouTubeDownloader.download_with_retry
                 download_result = await self.youtube_downloader.download_with_retry(track_info.identifier)
 
-                if not download_result.success or not download_result.file_path or not download_result.track_info:
-                    s.last_error = download_result.error or "Unknown download error"
-                    logger.warning("[Radio] Download failed chat=%s track=%s error=%s", s.chat_id, track_info.identifier, s.last_error)
+                if not download_result.success:
+                    s.last_error = download_result.error
+                    logger.warning(f"[Radio] Skip failed track: {track_info.identifier} - {download_result.error}")
+                    # Не ждём, сразу берём следующий трек
                     continue
+
+                if not download_result.file_path or not download_result.track_info:
+                    s.last_error = download_result.error or "Unknown download error: file_path or track_info missing"
+                    logger.warning("[Radio] Download result missing file_path or track_info chat=%s track=%s error=%s", s.chat_id, track_info.identifier, s.last_error)
+                    continue
+
 
                 # отправка файла
                 with Path(download_result.file_path).open("rb") as f:
