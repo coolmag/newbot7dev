@@ -16,7 +16,7 @@ class Config:
     bot_token: str
     webhook_url: str  # Полный URL до /telegram
     base_url: str     # https://your-domain (для WebApp ссылки)
-    admin_id: int
+    admin_id: Optional[int]
 
     # Радио
     play_window_sec: int = 90
@@ -36,6 +36,5 @@ class Config:
             bot_token=_require("BOT_TOKEN"),
             webhook_url=_require("WEBHOOK_URL"),
             base_url=_require("BASE_URL").rstrip("/"),
-                    admin_id_str = os.getenv("ADMIN_ID")
-                    admin_id = int(admin_id_str) if admin_id_str else None,
+            admin_id=admin_id,
         )
