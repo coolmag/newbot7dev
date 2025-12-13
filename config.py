@@ -36,5 +36,6 @@ class Config:
             bot_token=_require("BOT_TOKEN"),
             webhook_url=_require("WEBHOOK_URL"),
             base_url=_require("BASE_URL").rstrip("/"),
-            admin_id=int(_require("ADMIN_ID")),
+                    admin_id_str = os.getenv("ADMIN_ID")
+                    admin_id = int(admin_id_str) if admin_id_str else None,
         )
