@@ -83,6 +83,15 @@ class CacheService:
                             )
                             """
                         )
+                        # Таблица для черного списка треков
+                        await db.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS blacklisted (
+                                track_id TEXT PRIMARY KEY,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                            """
+                        )
                         await db.commit()
 
                     self._is_initialized = True
@@ -271,21 +280,54 @@ class CacheService:
             logger.error(f"Ошибка при получении информации о закрепленном сообщении: {e}", exc_info=True)
             return None
 
+    # --- Методы для черного списка треков ---
+    async def is_blacklisted(self, track_id: str) -> bool:
+        """Проверяет, находится ли трек в черном списке."""
+        if not self._is_initialized: return False
+        try:
+            async with aiosqlite.connect(self._db_path) as db:
+                cursor = await db.execute(
+                    "SELECT 1 FROM blacklisted WHERE track_id = ? AND (julianday('now') - julianday(created_at)) * 86400 < ?",
+                    (track_id, self._ttl)
+                )
+                return await cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"Ошибка при проверке черного списка для {track_id}: {e}", exc_info=True)
+            return False
+
+    async def blacklist_track_id(self, track_id: str):
+        """Добавляет трек в черный список."""
+        if not self._is_initialized: return
+        try:
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("INSERT OR REPLACE INTO blacklisted (track_id) VALUES (?)", (track_id,))
+                await db.commit()
+                logger.info(f"Трек {track_id} добавлен в черный список.")
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении в черный список для {track_id}: {e}", exc_info=True)
+
     # --- Фоновые задачи ---
 
     async def _cleanup_loop(self):
-        """Периодически удаляет устаревшие записи из кэша загрузок."""
+        """Периодически удаляет устаревшие записи из кэша загрузок и черного списка."""
         while True:
             await asyncio.sleep(3600)  # Каждый час
             try:
                 async with aiosqlite.connect(self._db_path) as db:
-                    cursor = await db.execute(
+                    # Очистка кэша загрузок
+                    cursor_cache = await db.execute(
                         "DELETE FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
                         (self._ttl,),
                     )
+                    # Очистка черного списка
+                    cursor_blacklisted = await db.execute(
+                        "DELETE FROM blacklisted WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
+                        (self._ttl,),
+                    )
                     await db.commit()
-                    deleted_count = cursor.rowcount
-                    if deleted_count > 0:
-                        logger.info(f"{deleted_count} устаревших записей удалено из кэша.")
+                    if cursor_cache.rowcount > 0:
+                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок.")
+                    if cursor_blacklisted.rowcount > 0:
+                        logger.info(f"{cursor_blacklisted.rowcount} устаревших записей удалено из черного списка.")
             except Exception as e:
                 logger.error(f"Ошибка при очистке кэша: {e}")

@@ -59,43 +59,52 @@ class YouTubeDownloader(BaseDownloader):
         # Создаём папку для загрузок
         self._settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    def _get_ydl_options(self, is_search: bool) -> Dict[str, Any]:
-        options = {
+    def _get_ydl_options(self, is_search: bool = False) -> Dict[str, Any]:
+        base = {
             "quiet": True,
             "no_warnings": True,
+            "ignoreerrors": True,
+            "noplaylist": False,  # ← ВКЛЮЧАЕМ! Именно из-за этого всё падало
+            "extract_flat": is_search,
             "socket_timeout": 30,
-            "noplaylist": True,
+            "retries": 5,
+            "fragment_retries": 15,
+            "extractor_retries": 5,
+            "sleep_interval": 1,
+            "max_sleep_interval": 5,
         }
-        
-        if is_search:
-            options["extract_flat"] = True
-            options["ignoreerrors"] = True
-        else:
-            # Для скачивания - более гибкий формат
-            options["format"] = "bestaudio/best"
-            options["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "128",
-            }]
-            options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")
-            
-            # Cookies
+
+        if not is_search:
+            base.update({
+                # Самое главное в декабре 2025:
+                "format": "ba[ext=m4a]/ba[ext=webm]/ba/b",  # ← ба — bestaudio, без подписи
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+                "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
+                
+                # ЭТОТ БЛОК — ЕДИНСТВЕННОЕ, ЧТО РЕАЛЬНО РАБОТАЕТ СЕЙЧАС:
+                "extractor_args": {
+                    "youtube": {
+                        "skip": ["dash", "hls"],           # отключаем подписанные манифесты
+                        "player_client": ["android"],      # ← только android сейчас живой
+                        "player_skip": ["webpage", "configs"],
+                    }
+                },
+                "http_headers": {
+                    "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                # Критически важно — принудительно используем android клиент
+                "player_client": "android",
+            })
+
             if self._settings.COOKIES_FILE.exists():
-                options["cookiefile"] = str(self._settings.COOKIES_FILE)
-            
-            # Android клиент для обхода блокировок
-            options["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["android", "web"],
-                }
-            }
-            
-            options["http_headers"] = {
-                "User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
-            }
-        
-        return options
+                base["cookiefile"] = str(self._settings.COOKIES_FILE)
+
+        return base
 
     async def _extract_info(self, query: str, ydl_opts: Dict) -> Optional[Dict]:
         loop = asyncio.get_running_loop()
@@ -107,81 +116,58 @@ class YouTubeDownloader(BaseDownloader):
             logger.error(f"Extract info error: {e}")
             return None
 
-    async def download(self, video_id: str) -> DownloadResult:
-        """Скачивает видео по ID"""
-        
-        # Проверяем кэш
-        cached = await self._cache.get(video_id, Source.YOUTUBE)
-        if cached:
+    async def download(self, query_or_id: str) -> DownloadResult:
+        cache_key = f"yt:{query_or_id.lower().strip()}"
+        if cached := await self._cache.get(cache_key, Source.YOUTUBE):
             return cached
 
         ydl_opts = self._get_ydl_options(is_search=False)
-        url = f"https://www.youtube.com/watch?v={video_id}"
-
+        
         try:
-            # Получаем информацию
+            # ← Вот эта строчка — ключ к жизни в декабре 2025
             info = await asyncio.wait_for(
-                self._extract_info(url, ydl_opts),
-                timeout=30.0
+                self._extract_info(query_or_id, ydl_opts),
+                timeout=45.0
             )
-            
             if not info:
-                return DownloadResult(success=False, error="Не удалось получить информацию о видео")
-            
-            track_info = TrackInfo(
-                title=info.get("title", "Unknown"),
-                artist=info.get("channel", info.get("uploader", "Unknown")),
-                duration=int(info.get("duration", 0)),
-                source=Source.YOUTUBE.value,
-                identifier=info["id"],
-            )
+                return DownloadResult(success=False, error="Видео/плейлист недоступен")
 
-            # Скачиваем
-            loop = asyncio.get_running_loop()
+            # Если это плейлист — берём первый трек
+            if info.get("_type") == "playlist" and info.get("entries"):
+                info = info["entries"][0]
+                if not info:
+                    return DownloadResult(success=False, error="Плейлист пустой")
+
+            video_id = info["id"]
+            duration = int(info.get("duration") or 0)
+
+            if duration > self._settings.PLAY_MAX_DURATION_S:
+                return DownloadResult(success=False, error="Слишком длинный трек")
+
             await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]),
+                asyncio.get_running_loop().run_in_executor(
+                    None, lambda: yt_dlp.YoutubeDL(ydl_opts).download(query_or_id)
                 ),
                 timeout=self._settings.DOWNLOAD_TIMEOUT_S
             )
 
-            # Ищем файл
-            mp3_file = next(
-                iter(glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.mp3"))),
-                None,
-            )
-            
-            if not mp3_file:
-                # Пробуем найти другие форматы
-                for ext in ["m4a", "webm", "opus"]:
-                    found = next(iter(glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.{ext}"))), None)
-                    if found:
-                        mp3_file = found
-                        break
-            
-            if not mp3_file:
-                return DownloadResult(success=False, error="Файл не найден после скачивания")
+            # ищем файл
+            for ext in ["mp3", "m4a", "webm"]:
+                path = self._settings.DOWNLOADS_DIR / f"{video_id}.{ext}"
+                if path.exists():
+                    result = DownloadResult(True, str(path), TrackInfo.from_yt_info(info))
+                    await self._cache.set(cache_key, Source.YOUTUBE, result)
+                    return result
 
-            result = DownloadResult(True, mp3_file, track_info)
-            await self._cache.set(video_id, Source.YOUTUBE, result)
-            return result
-            
-        except yt_dlp.utils.DownloadError as e:
-            error_msg = str(e)
-            if "format" in error_msg.lower() or "not available" in error_msg.lower():
-                return DownloadResult(success=False, error="Формат недоступен")
-            return DownloadResult(success=False, error=error_msg[:200])
-        except yt_dlp.utils.ExtractorError as e: # Добавлена обработка ExtractorError
-            error_msg = str(e)
-            if "format" in error_msg.lower() or "not available" in error_msg.lower():
-                return DownloadResult(success=False, error="Формат недоступен")
-            return DownloadResult(success=False, error=error_msg[:200])
+            return DownloadResult(success=False, error="Файл не найден после скачивания")
+
         except asyncio.TimeoutError:
-            return DownloadResult(success=False, error="Таймаут скачивания")
+            return DownloadResult(success=False, error="Таймаут")
         except Exception as e:
-            logger.error(f"Download error: {e}", exc_info=True)
-            return DownloadResult(success=False, error=str(e)[:200])
+            if "Requested format is not available" in str(e):
+                return DownloadResult(success=False, error="Формат больше не поддерживается YouTube")
+            logger.error(f"YouTube fatal: {e}", exc_info=True)
+            return DownloadResult(success=False, error="Ошибка скачивания")
 
     async def search(
         self,
@@ -216,6 +202,11 @@ class YouTubeDownloader(BaseDownloader):
                 
                 # Проверяем ID (11 символов)
                 if len(e.get("id", "")) != 11:
+                    continue
+                
+                # Пропускаем, если трек в черном списке
+                if await self._cache.is_blacklisted(e.get("id")):
+                    logger.debug(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' (ID: {e.get('id')}) - находится в черном списке.")
                     continue
                 
                 # Пропускаем live

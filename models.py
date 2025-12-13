@@ -54,3 +54,16 @@ class TrackInfo:
             return "00:00"
         minutes, seconds = divmod(self.duration, 60)
         return f"{minutes:02d}:{seconds:02d}"
+
+    @staticmethod
+    def from_yt_info(info: dict) -> "TrackInfo":
+        """Создает TrackInfo из словаря информации yt-dlp."""
+        return TrackInfo(
+            title=info.get("title", "Unknown"),
+            artist=info.get("channel", info.get("uploader", "Unknown")),
+            duration=int(info.get("duration", 0)),
+            source=Source.YOUTUBE.value,
+            identifier=info["id"],
+            view_count=info.get("view_count"),
+            like_count=info.get("like_count"),
+        )
