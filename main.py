@@ -107,16 +107,16 @@ async def telegram_webhook(req: Request):
 
 @app.get("/audio/{track_id}")
 async def get_audio_file(track_id: str):
+    logger.debug("Request for audio file with track_id: %s", track_id)
     radio = app.state.radio
-    # Найти сессию, которая содержит этот track_id в текущем треке
-    # (предполагая, что трек_id уникален глобально для текущего воспроизведения)
-    for chat_id, session in radio._sessions.items(): # Доступ к внутренним сессиям RadioManager
-        if session.current and session.current.id == track_id and session.audio_file_path:
-            # Проверить существование файла
-            if session.audio_file_path.exists():
+    for chat_id, session in radio._sessions.items():
+        if session.current and session.current.id == track_id:
+            logger.debug("Found session for track_id %s in chat %s. Current track_id: %s, audio_file_path: %s, exists: %s",
+                         track_id, chat_id, session.current.id, session.audio_file_path, session.audio_file_path.exists() if session.audio_file_path else "N/A")
+            if session.audio_file_path and session.audio_file_path.exists():
                 return FileResponse(session.audio_file_path, media_type="audio/mpeg")
             else:
                 logger.warning("Audio file not found for track_id: %s at path: %s", track_id, session.audio_file_path)
                 return JSONResponse({"error": "Audio file not found"}, status_code=404)
-    logger.warning("Track_id not found in any active session: %s", track_id)
+    logger.warning("Track_id %s not found in any active session.", track_id)
     return JSONResponse({"error": "Track not found or not currently playing"}, status_code=404)

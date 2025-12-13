@@ -87,6 +87,7 @@ class RadioManager:
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
             }
+        logger.debug("Radio status for chat %s: %s", chat_id, data[str(chat_id)])
         return {"sessions": data}
 
     async def start(self, chat_id: int, query: str) -> None:
