@@ -7,7 +7,7 @@ import re
 import shlex
 import signal
 import tempfile
-from dataclass import dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
 
