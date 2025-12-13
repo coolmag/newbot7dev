@@ -16,7 +16,7 @@ from telegram.ext import (
 from telegram.error import BadRequest
 
 from radio import RadioManager
-from config import Config # Добавлено: импортируем Config
+from config import Settings # Изменено на Settings
 
 logger = logging.getLogger("handlers")
 
@@ -49,7 +49,7 @@ def player_markup(base_url: str, chat_type: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[btn]])
 
 
-def setup_handlers(app: Application, radio: RadioManager, cfg: Config) -> None: # Изменено: теперь принимаем Config
+def setup_handlers(app: Application, radio: RadioManager, settings: Settings) -> None: # Изменено: теперь принимаем Settings
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text(
             "Привет! Команды:\n"
@@ -62,7 +62,7 @@ def setup_handlers(app: Application, radio: RadioManager, cfg: Config) -> None: 
 
     async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         uid = update.effective_user.id if update.effective_user else 0
-        if uid != cfg.admin_id: # Используем cfg.admin_id
+        if uid not in settings.ADMIN_ID_LIST: # Используем settings.ADMIN_ID_LIST
             await update.effective_message.reply_text("Нет доступа.")
             return
         await update.effective_message.reply_text("👑 **Админ-панель**", parse_mode="Markdown")
@@ -71,7 +71,7 @@ def setup_handlers(app: Application, radio: RadioManager, cfg: Config) -> None: 
         chat_type = update.effective_chat.type
         await update.effective_message.reply_text(
             "Нажмите кнопку ниже, чтобы открыть веб-плеер:",
-            reply_markup=player_markup(cfg.base_url, chat_type), # Используем cfg.base_url
+            reply_markup=player_markup(settings.BASE_URL, chat_type), # Используем settings.BASE_URL
         )
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
