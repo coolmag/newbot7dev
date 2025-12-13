@@ -172,6 +172,11 @@ class YouTubeDownloader(BaseDownloader):
             if "format" in error_msg.lower() or "not available" in error_msg.lower():
                 return DownloadResult(success=False, error="Формат недоступен")
             return DownloadResult(success=False, error=error_msg[:200])
+        except yt_dlp.utils.ExtractorError as e: # Добавлена обработка ExtractorError
+            error_msg = str(e)
+            if "format" in error_msg.lower() or "not available" in error_msg.lower():
+                return DownloadResult(success=False, error="Формат недоступен")
+            return DownloadResult(success=False, error=error_msg[:200])
         except asyncio.TimeoutError:
             return DownloadResult(success=False, error="Таймаут скачивания")
         except Exception as e:
