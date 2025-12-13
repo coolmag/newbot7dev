@@ -12,35 +12,36 @@ from fastapi.staticfiles import StaticFiles
 from telegram import Update
 from telegram.ext import Application
 
-from config import Config
+from config import Settings # Изменено на Settings
 from logging_setup import setup_logging
-from cache import Cache
+from cache import CacheService # Изменено на CacheService
+from youtube import YouTubeDownloader # Добавлено
 from radio import RadioManager
 from handlers import setup_handlers
 
 logger = logging.getLogger("main")
 
 
-def _write_cookies_if_present(cfg: Config) -> None:
-    raw = os.getenv(cfg.cookies_txt_env)
-    if not raw:
-        return
-    Path(cfg.cookies_path).write_text(raw, encoding="utf-8")
-    logger.info("✅ cookies.txt создан из переменной окружения (%s).", cfg.cookies_txt_env)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    cfg = Config.from_env()
+    settings = Settings() # Используем новый класс Settings
 
-    _write_cookies_if_present(cfg)
+    # Создаем директорию для загрузок, если её нет
+    settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    cache = Cache("cache.sqlite3")
+    # Записываем cookies, если они есть в переменных окружения
+    if settings.COOKIES_CONTENT:
+        settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
+        logger.info("✅ cookies.txt создан из переменной окружения.")
+
+    cache = CacheService(settings) # Используем новый CacheService
     await cache.initialize()
     logger.info("Cache initialized")
 
-    tg_app = Application.builder().token(cfg.bot_token).build()
+    youtube_downloader = YouTubeDownloader(settings, cache) # Инициализируем YouTubeDownloader
+
+    tg_app = Application.builder().token(settings.BOT_TOKEN).build() # Используем settings.BOT_TOKEN
 
     # error handler чтобы видеть реальные причины
     async def on_error(update, context):
@@ -50,29 +51,31 @@ async def lifespan(app: FastAPI):
 
     radio = RadioManager(
         bot=tg_app.bot,
-        cfg=cfg, # Изменено: передаем cfg
+        settings=settings, # Передаем settings
+        youtube_downloader=youtube_downloader, # Передаем youtube_downloader
     )
 
-    setup_handlers(tg_app, radio, cfg) # Изменено: передаем cfg
+    setup_handlers(tg_app, radio, settings) # Передаем settings
 
     await tg_app.initialize()
     await tg_app.start()
 
     # Установка вебхука
-    await tg_app.bot.set_webhook(url=cfg.webhook_url)
-    logger.info("✅ Webhook set to: %s", cfg.webhook_url)
+    await tg_app.bot.set_webhook(url=settings.WEBHOOK_URL) # Используем settings.WEBHOOK_URL
+    logger.info("✅ Webhook set to: %s", settings.WEBHOOK_URL)
 
     # сохраняем в app.state
-    app.state.cfg = cfg
+    app.state.settings = settings # Изменено на app.state.settings
     app.state.cache = cache
     app.state.tg_app = tg_app
     app.state.radio = radio
+    app.state.youtube_downloader = youtube_downloader # Сохраняем youtube_downloader
 
     yield
 
     # shutdown
     try:
-        await app.state.radio.stop_all()  # если вдруг добавишь (см. ниже)
+        await app.state.radio.stop_all()
     except Exception:
         pass
     await tg_app.stop()

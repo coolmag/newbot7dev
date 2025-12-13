@@ -1,43 +1,132 @@
-from __future__ import annotations
+from pathlib import Path
+from typing import List, Optional, Dict
 
-import os
-from dataclasses import dataclass
-
-
-def _require(name: str) -> str:
-    v = os.getenv(name)
-    if not v:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return v
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass(frozen=True)
-class Config:
-    bot_token: str
-    webhook_url: str  # Полный URL до /telegram
-    base_url: str     # https://your-domain (для WebApp ссылки)
-    admin_id: Optional[int]
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
-    # Радио
-    play_window_sec: int = 90
-    max_results: int = 12
-    download_timeout_sec: int = 120
-    search_timeout_sec: int = 20
-    max_filesize_mb: int = 45
-    max_concurrent_downloads: int = 1  # Railway обычно не любит параллельные yt-dlp
+    # --- Обязательные переменные ---
+    BOT_TOKEN: str
+    WEBHOOK_URL: str  # Полный URL до /telegram
+    BASE_URL: str     # https://your-domain (для WebApp ссылки)
 
-    # Cookies для yt-dlp (опционально)
-    cookies_txt_env: str = "COOKIES_TXT"  # содержимое cookies.txt строкой
-    cookies_path: str = "cookies.txt"
+    # --- Необязательные переменные ---
+    ADMIN_IDS: str = ""
+    COOKIES_CONTENT: str = ""
 
-    @staticmethod
-    def from_env() -> "Config":
-        admin_id_str = os.getenv("ADMIN_ID")
-        admin_id = int(admin_id_str) if admin_id_str else None
+    @property
+    def ADMIN_ID_LIST(self) -> List[int]:
+        if not self.ADMIN_IDS:
+            return []
+        return [int(i.strip()) for i in self.ADMIN_IDS.split(",") if i.strip()]
 
-        return Config(
-            bot_token=_require("BOT_TOKEN"),
-            webhook_url=_require("WEBHOOK_URL"),
-            base_url=_require("BASE_URL").rstrip("/"),
-            admin_id=admin_id,
-        )
+    # --- Пути ---
+    BASE_DIR: Path = Path(__file__).resolve().parent
+    DOWNLOADS_DIR: Path = BASE_DIR / "downloads"
+    CACHE_DB_PATH: Path = BASE_DIR / "cache.db"
+    LOG_FILE_PATH: Path = BASE_DIR / "bot.log"
+    COOKIES_FILE: Path = BASE_DIR / "cookies.txt"
+
+    # --- Настройки логгера ---
+    LOG_LEVEL: str = "INFO"
+
+    # --- Настройки загрузчика ---
+    MAX_QUERY_LENGTH: int = 150
+    DOWNLOAD_TIMEOUT_S: int = 120
+    
+    # --- Настройки для команды /play ---
+    PLAY_MAX_DURATION_S: int = 720    # 12 минут
+    PLAY_MIN_DURATION_S: int = 15     # 15 секунд
+    PLAY_MAX_FILE_SIZE_MB: int = 45
+
+    # --- Настройки повторных попыток ---
+    MAX_RETRIES: int = 5
+    RETRY_DELAY_S: float = 5.0
+
+    # --- Настройки радио ---
+    RADIO_SOURCE: str = "youtube"
+    RADIO_COOLDOWN_S: int = 120
+    RADIO_MAX_DURATION_S: int = 600   # 10 минут
+    RADIO_MIN_DURATION_S: int = 60    # 1 минута
+    RADIO_MIN_VIEWS: Optional[int] = 10000
+    RADIO_MIN_LIKES: Optional[int] = 500
+    RADIO_MIN_LIKE_RATIO: Optional[float] = 0.75 # Например, 0.75 для 75% лайков
+    RADIO_GENRES: List[str] = [
+        # --- Рок ---
+        "rock", "classic rock", "psychedelic rock", "indie rock", "alternative rock", "hard rock", 
+        "post-punk", "metal", "industrial", "gothic rock", "punk rock", "progressive rock",
+        "pop rock", "alternative rock", "grunge", "britpop", "emo", "indie rock",
+        "rock and roll",
+
+        # --- Поп и танцевальная ---
+        "pop", "new wave", "disco", "r&b", "traditional pop", "synth-pop", "latin pop", "k-pop",
+        
+        # --- Соул, Фанк, Грув ---
+        "soul", "funk", "soul groove", "jazz-funk", "rare groove", "modern soul", "neo-soul",
+        
+        # --- Джаз и Блюз ---
+        "jazz", "blues", "doo-wop",
+
+        # --- Электроника (общая) ---
+        "electronic", "ambient", "chillwave", "lofi hip-hop", "downtempo", "edm (electronic dance music)",
+        "trap", "hyperpop", "synthwave",
+
+        # --- Танцевальная электроника (House, Techno и др.) ---
+        "house", "deep house", "deep tech house", "progressive house", "tech house", "chill house", "tropical house",
+        "techno", "minimal techno", "trance", "drum and bass", "dubstep", "uk garage", 
+        "breakbeat", "hardstyle", "phonk", "future bass", "ambient house", "trip-hop",
+
+        # --- DJ-сеты и ремиксы ---
+        "extended mix", "club mix", "dj set",
+        "hardwell", "armin van buuren", "tiesto", "david guetta", "daft punk",
+        
+        # --- Хип-хоп / Рэп ---
+        "hip-hop", "rap", "drill",
+        
+        # --- Классика, фолк и этника ---
+        "classical", "orchestral", "soundtrack", "folk", "country", "reggae", "latin", "world music", "afrobeats", "reggaeton", "ska",
+
+        # --- Русскоязычные (поп и рок) ---
+        "русская поп-музыка", "русский рок", "русский панк-рок", "русский пост-панк",
+
+        # --- Русскоязычные (хип-хоп) ---
+        "русский рэп", "русский хип-хоп", "кальянный рэп",
+
+        # --- Советская эстрада, джаз, грув ---
+        "советский грув", "советский фанк", "советский джаз", "советская эстрада",
+
+        # --- Русскоязычные (авторское и шансон) ---
+        "шансон", "бардовская песня", "авторская песня", "русские романсы",
+        
+        # --- Дополнительные ---
+        "bedroom pop"
+    ]
+
+    RADIO_MOODS: Dict[str, List[str]] = {
+        # Новые "зумерские" настроения
+        "чилл": ["lofi hip-hop", "chillwave", "downtempo", "ambient", "trip-hop", "bedroom pop"],
+        "вайб": ["soul", "r&b", "neo-soul", "jazz-funk", "deep house", "bedroom pop"],
+        "движ": ["hip-hop", "drill", "phonk", "trap", "hardstyle", "drum and bass", "k-pop"],
+        "грув": ["funk", "disco", "soul groove", "rare groove", "jazz-funk"],
+        
+        # Обновленные старые
+        "энергия": ["pop", "house", "edm", "progressive house", "hard rock", "эстрада 80-90х"],
+        "грусть": ["blues", "indie rock", "alternative rock", "emo", "post-punk", "русские романсы"],
+        "фокус": ["ambient", "minimal techno", "lofi hip-hop", "soundtrack"],
+        "драйв": ["hard rock", "metal", "phonk", "techno", "trance", "punk rock"],
+        "ностальгия": ["synthwave", "retrowave", "classic rock", "советская эстрада", "new wave"],
+        
+        # Специальные
+        "русское": ["русская поп-музыка", "русский рок", "русский рэп", "кальянный рэп", "советский джаз", "советская эстрада"]
+    }
+
+    # --- Настройки кэша ---
+    CACHE_TTL_DAYS: int = 7
+
+
+def get_settings() -> Settings:
+    return Settings()
