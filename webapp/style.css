@@ -1,256 +1,694 @@
+/* ===== ОСНОВНЫЕ СТИЛИ ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --walkman-silver: #c0c0c0;
+  --walkman-dark: #2a2a2a;
+  --walkman-accent: #ff6b00;
+  --lcd-bg: #1a2b1a;
+  --lcd-text: #00ff41;
+  --lcd-dim: #0a3d0a;
+  --button-metal: linear-gradient(145deg, #555, #333);
+  --cassette-brown: #8b4513;
+}
+
 body {
-    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-    background: linear-gradient(to bottom right, #1a1a2e, #16213e);
-    color: #e0e0e0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    margin: 0;
-    overflow: hidden;
-    perspective: 1000px; /* Для 3D-эффектов */
+  font-family: 'Orbitron', 'VT323', monospace;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  overflow-x: hidden;
 }
 
-.walkman-player {
-    width: 340px; /* Немного шире */
-    height: 580px; /* Немного выше */
-    background: linear-gradient(to bottom, #5d5d5d, #2a2a2a); /* Металлический оттенок */
-    border-radius: 25px;
-    box-shadow:
-        0 15px 40px rgba(0, 0, 0, 0.6),
-        0 0 0 5px rgba(255, 255, 255, 0.05) inset;
-    display: flex;
-    flex-direction: column;
-    padding: 20px;
-    box-sizing: border-box;
-    position: relative;
-    transform: rotateX(5deg) rotateY(-5deg); /* Небольшой 3D-наклон */
-    transition: transform 0.3s ease;
-    border: 1px solid #777; /* Дополнительная рамка */
+/* ===== КОНТЕЙНЕР WALKMAN ===== */
+.walkman-container {
+  width: 100%;
+  max-width: 360px;
+  perspective: 1000px;
 }
 
-.walkman-player:hover {
-    transform: rotateX(0deg) rotateY(0deg);
+/* ===== ВЕРХНЯЯ ЧАСТЬ ===== */
+.walkman-top {
+  background: linear-gradient(to bottom, #e8e8e8, #c0c0c0);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #999;
+  border-bottom: none;
 }
 
-.player-body {
-    background: #333; /* Внутренний фон */
-    border-radius: 15px;
-    padding: 15px;
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+.brand-logo {
+  font-family: 'Arial Black', sans-serif;
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #333;
+  text-shadow: 1px 1px 0 #fff;
+  letter-spacing: 2px;
 }
 
-.player-screen {
-    background: #0d0d0d;
-    border: 2px solid #222;
-    border-radius: 8px;
-    min-height: 150px; /* Фиксированная высота для экрана */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 10px;
-    overflow: hidden;
-    position: relative;
-    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.7);
+.model-name {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7em;
+  color: #666;
+  letter-spacing: 3px;
 }
 
-.track-cover {
-    width: 100%;
-    height: 100%; /* Занимает доступное пространство */
-    object-fit: contain;
-    border-radius: 4px;
-    max-height: 180px;
-    margin-bottom: 5px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+/* ===== ОСНОВНОЙ КОРПУС ===== */
+.walkman-body {
+  background: linear-gradient(180deg, #b8b8b8 0%, #909090 50%, #787878 100%);
+  border: 2px solid #666;
+  border-radius: 0 0 25px 25px;
+  padding: 15px;
+  box-shadow: 
+    0 20px 60px rgba(0,0,0,0.5),
+    inset 0 2px 0 rgba(255,255,255,0.3),
+    inset 0 -2px 0 rgba(0,0,0,0.2);
 }
 
-.track-info {
-    text-align: center;
-    width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-top: auto; /* Прижимает информацию вниз экрана */
+/* ===== LCD ЭКРАН ===== */
+.lcd-screen {
+  background: linear-gradient(145deg, #0d1f0d, #1a3a1a);
+  border-radius: 10px;
+  padding: 3px;
+  box-shadow: 
+    inset 0 3px 10px rgba(0,0,0,0.8),
+    0 1px 0 rgba(255,255,255,0.1);
+  border: 2px solid #333;
+}
+
+.lcd-inner {
+  background: var(--lcd-bg);
+  border-radius: 8px;
+  padding: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.lcd-inner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.1) 2px,
+      rgba(0, 0, 0, 0.1) 4px
+    );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Статус бар */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--lcd-dim);
+  margin-bottom: 8px;
+}
+
+.status-icon {
+  font-size: 1em;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-family: 'VT323', monospace;
+  font-size: 0.85em;
+  color: var(--lcd-text);
+  letter-spacing: 1px;
+  text-shadow: 0 0 10px var(--lcd-text);
+}
+
+.battery-indicator {
+  width: 25px;
+  height: 12px;
+  border: 1px solid var(--lcd-text);
+  border-radius: 2px;
+  padding: 1px;
+  position: relative;
+}
+
+.battery-indicator::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 6px;
+  background: var(--lcd-text);
+  border-radius: 0 1px 1px 0;
+}
+
+.battery-level {
+  display: block;
+  width: 80%;
+  height: 100%;
+  background: var(--lcd-text);
+  border-radius: 1px;
+  animation: batteryPulse 3s infinite;
+}
+
+@keyframes batteryPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Визуализатор */
+.visualizer {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 3px;
+  height: 35px;
+  padding: 5px 0;
+}
+
+.visualizer .bar {
+  width: 8px;
+  background: linear-gradient(to top, #00ff41, #00cc33, #009922);
+  border-radius: 2px 2px 0 0;
+  min-height: 3px;
+  transition: height 0.1s ease;
+  box-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+}
+
+.visualizer.playing .bar {
+  animation: equalizerBar 0.5s ease infinite;
+}
+
+.visualizer .bar:nth-child(1) { animation-delay: 0.0s; }
+.visualizer .bar:nth-child(2) { animation-delay: 0.1s; }
+.visualizer .bar:nth-child(3) { animation-delay: 0.2s; }
+.visualizer .bar:nth-child(4) { animation-delay: 0.15s; }
+.visualizer .bar:nth-child(5) { animation-delay: 0.3s; }
+.visualizer .bar:nth-child(6) { animation-delay: 0.05s; }
+.visualizer .bar:nth-child(7) { animation-delay: 0.25s; }
+.visualizer .bar:nth-child(8) { animation-delay: 0.1s; }
+.visualizer .bar:nth-child(9) { animation-delay: 0.2s; }
+.visualizer .bar:nth-child(10) { animation-delay: 0.35s; }
+.visualizer .bar:nth-child(11) { animation-delay: 0.15s; }
+.visualizer .bar:nth-child(12) { animation-delay: 0.25s; }
+
+@keyframes equalizerBar {
+  0%, 100% { height: 5px; }
+  25% { height: 25px; }
+  50% { height: 15px; }
+  75% { height: 30px; }
+}
+
+/* Информация о треке */
+.track-display {
+  text-align: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--lcd-dim);
 }
 
 .track-title {
-    font-size: 1.1em;
-    font-weight: bold;
-    color: #fff;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  font-family: 'VT323', monospace;
+  font-size: 1.3em;
+  color: var(--lcd-text);
+  text-shadow: 0 0 15px var(--lcd-text);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.track-title.scrolling span {
+  display: inline-block;
+  animation: marquee 10s linear infinite;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
 }
 
 .track-artist {
-    font-size: 0.85em;
-    color: #bbb;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  font-family: 'VT323', monospace;
+  font-size: 1em;
+  color: #00cc33;
+  margin-top: 4px;
+  text-shadow: 0 0 8px #00cc33;
 }
 
-.cassette-area {
-    background: linear-gradient(to right, #444, #666, #444); /* Более выраженный градиент */
-    border-radius: 8px;
-    padding: 10px;
-    height: 120px; /* Высота для кассеты */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.6);
-    border: 1px solid #555;
+/* Жанр и время */
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
 }
 
-.tape-window {
-    width: 90%;
-    height: 70px;
-    background: #222;
-    border-radius: 5px;
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    padding: 5px;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
-    border: 1px solid #111;
+.genre-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 255, 65, 0.15);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--lcd-dim);
 }
 
-.tape-reel {
+.genre-icon {
+  font-size: 0.9em;
+}
+
+.genre-text {
+  font-family: 'VT323', monospace;
+  font-size: 0.9em;
+  color: var(--lcd-text);
+  letter-spacing: 1px;
+}
+
+.time-display {
+  font-family: 'Orbitron', monospace;
+  font-size: 0.9em;
+  color: var(--lcd-text);
+  text-shadow: 0 0 10px var(--lcd-text);
+}
+
+.time-separator {
+  opacity: 0.5;
+  margin: 0 2px;
+}
+
+/* Прогресс бар */
+.progress-container {
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.progress-track {
+  height: 8px;
+  background: var(--lcd-dim);
+  border-radius: 4px;
+  position: relative;
+  overflow: visible;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ff41, #00cc33);
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+}
+
+.progress-head {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background: var(--lcd-text);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--lcd-text);
+  transition: left 0.1s linear;
+}
+
+/* Дополнительная информация */
+.extra-info {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--lcd-dim);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.info-label {
+  font-family: 'VT323', monospace;
+  font-size: 0.7em;
+  color: #00aa33;
+  letter-spacing: 1px;
+}
+
+.info-value {
+  font-family: 'VT323', monospace;
+  font-size: 0.85em;
+  color: var(--lcd-text);
+  text-shadow: 0 0 5px var(--lcd-text);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== КАССЕТНЫЙ ОТСЕК ===== */
+.cassette-window {
+  margin: 15px 0;
+  background: linear-gradient(145deg, #1a1a1a, #333);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 
+    inset 0 3px 10px rgba(0,0,0,0.8),
+    0 1px 0 rgba(255,255,255,0.1);
+  border: 2px solid #444;
+}
+
+.cassette {
+  background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid #555;
+}
+
+.cassette-label {
+  text-align: center;
+  padding: 5px;
+  background: linear-gradient(90deg, #ff6b00, #ff8533);
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.cassette-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7em;
+  color: #fff;
+  letter-spacing: 2px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.reels-container {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.reel {
+  width: 50px;
+  height: 50px;
+  background: #111;
+  border-radius: 50%;
+  border: 3px solid #444;
+  position: relative;
+  box-shadow: 
+    inset 0 0 10px rgba(0,0,0,0.8),
+    0 2px 5px rgba(0,0,0,0.5);
+}
+
+.reel-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 15px;
+  height: 15px;
+  background: #333;
+  border-radius: 50%;
+  border: 2px solid #555;
+}
+
+.reel-spokes {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 35px;
+  height: 35px;
+  border: 2px dashed #444;
+  border-radius: 50%;
+}
+
+.reel.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.reel.spinning .reel-spokes {
+  animation: spin 0.5s linear infinite reverse;
+}
+
+@keyframes spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.tape-path {
+  width: 40px;
+  height: 4px;
+  background: linear-gradient(90deg, #333, #555, #333);
+  border-radius: 2px;
+}
+
+/* ===== ПАНЕЛЬ УПРАВЛЕНИЯ ===== */
+.controls-panel {
+  background: linear-gradient(180deg, #666, #444);
+  border-radius: 12px;
+  padding: 15px;
+  box-shadow: 
+    inset 0 2px 0 rgba(255,255,255,0.2),
+    inset 0 -2px 0 rgba(0,0,0,0.3);
+  border: 1px solid #555;
+}
+
+.controls-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.controls-row.secondary {
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+/* Вспомогательные кнопки */
+.btn-secondary {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(145deg, #555, #333);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.1em;
+  box-shadow: 
+    0 3px 8px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: linear-gradient(145deg, #666, #444);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.btn-secondary.active {
+  background: linear-gradient(145deg, var(--walkman-accent), #cc5500);
+  box-shadow: 0 0 15px rgba(255, 107, 0, 0.5);
+}
+
+/* Основные кнопки */
+.btn-control {
+  width: 65px;
+  height: 55px;
+  background: var(--button-metal);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 
+    0 4px 10px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.15),
+    inset 0 -1px 0 rgba(0,0,0,0.3);
+  transition: all 0.15s ease;
+}
+
+.btn-control:hover {
+  background: linear-gradient(145deg, #666, #444);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0,0,0,0.5);
+}
+
+.btn-control:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+.btn-icon {
+  font-size: 1.4em;
+  color: #ddd;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.btn-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.55em;
+  color: #999;
+  margin-top: 3px;
+  letter-spacing: 1px;
+}
+
+/* Кнопка Play */
+.btn-play {
+  width: 75px;
+  height: 60px;
+  background: linear-gradient(145deg, var(--walkman-accent), #cc5500);
+  box-shadow: 
+    0 4px 15px rgba(255, 107, 0, 0.4),
+    inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+.btn-play .btn-icon {
+  color: #fff;
+  font-size: 1.6em;
+}
+
+.btn-play .btn-label {
+  color: rgba(255,255,255,0.8);
+}
+
+.btn-play:hover {
+  background: linear-gradient(145deg, #ff8533, #ff6b00);
+  box-shadow: 0 6px 20px rgba(255, 107, 0, 0.6);
+}
+
+/* Громкость */
+.volume-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  margin-top: 5px;
+}
+
+.volume-icon {
+  font-size: 1.2em;
+}
+
+.volume-slider {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #333;
+  border-radius: 3px;
+  outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, var(--walkman-accent), #cc5500);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 107, 0, 0.5);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, var(--walkman-accent), #cc5500);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.volume-value {
+  font-family: 'VT323', monospace;
+  font-size: 1em;
+  color: #ddd;
+  min-width: 25px;
+  text-align: right;
+}
+
+/* ===== НИЖНЯЯ ЧАСТЬ ===== */
+.walkman-bottom {
+  background: linear-gradient(to bottom, #888, #666);
+  border-radius: 0 0 20px 20px;
+  padding: 8px 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #555;
+  border-top: none;
+}
+
+.jack-port {
+  font-size: 1.2em;
+}
+
+.walkman-serial {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.6em;
+  color: #444;
+  letter-spacing: 1px;
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+@media (max-height: 700px) {
+  .visualizer {
+    height: 25px;
+  }
+  
+  .cassette-window {
+    margin: 10px 0;
+    padding: 8px;
+  }
+  
+  .reel {
     width: 40px;
     height: 40px;
-    border-radius: 50%;
-    background: #000;
-    border: 2px solid #555;
-    position: relative;
-    overflow: hidden;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.9);
+  }
 }
 
-.tape-reel::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 60%;
-    height: 60%;
-    border-radius: 50%;
-    border: 2px dashed #444; /* Имитация ленты */
-}
-
-/* Анимация вращения пасиков */
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
-.tape-reel.playing {
-    animation: spin 1s linear infinite;
-}
-
-.lcd-display {
-    background: #0b2e0b; /* Темно-зеленый фон */
-    border-radius: 3px;
-    padding: 3px 8px;
-    margin-top: 8px;
-    width: 90%;
-    text-align: left;
-    font-family: 'Press Start 2P', cursive; /* Можно добавить шрифт в head, если нужно */
-    font-size: 0.7em;
-    color: #00ff00; /* Ярко-зеленый текст */
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.7);
-    border: 1px solid #005f00;
-    text-shadow: 0 0 5px #00ff00; /* Небольшое свечение */
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: clip; /* Обрезаем текст */
-    position: relative;
-}
-
-.player-controls {
-    background: linear-gradient(to bottom, #4a4a4a, #2a2a2a);
-    border-radius: 10px;
-    padding: 15px 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
-    border: 1px solid #555;
-}
-
-.progress-bar-container {
-    width: 100%;
-    height: 8px;
-    background: #555;
-    border-radius: 4px;
-    overflow: hidden;
-    cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-.progress-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(to right, #00bcd4, #008ba3); /* Градиентный прогресс */
-    border-radius: 4px;
-    transition: width 0.1s linear;
-}
-
-.buttons {
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    width: 100%;
-}
-
-.control-button {
-    background: linear-gradient(to bottom, #777, #555);
-    border: none;
-    border-radius: 50%;
-    width: 50px;
+@media (max-width: 360px) {
+  .walkman-container {
+    max-width: 100%;
+  }
+  
+  .btn-control {
+    width: 55px;
     height: 50px;
-    font-size: 1.5em;
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
-    text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
+  }
+  
+  .btn-play {
+    width: 65px;
+    height: 55px;
+  }
 }
-
-.control-button:hover {
-    background: linear-gradient(to bottom, #888, #666);
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
-}
-
-.control-button:active {
-    background: #444;
-    transform: translateY(1px);
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
-}
-
-#play-pause-button {
-    width: 65px; /* Больше */
-    height: 65px;
-    font-size: 2em; /* Больше иконка */
-    background: linear-gradient(to bottom, #00bcd4, #008ba3);
-    border: 2px solid #005f00; /* Добавляем рамку для выразительности */
-}
-
-#play-pause-button:hover {
-    background: linear-gradient(to bottom, #26d9ef, #00aec4);
-}
-
-#play-pause-button:active {
-    background: #007c8a;
-}
-```

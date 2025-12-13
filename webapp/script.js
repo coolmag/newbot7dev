@@ -1,70 +1,177 @@
-const audioPlayer = document.getElementById("audio-player");
-const playPauseButton = document.getElementById("play-pause-button");
-const prevButton = document.getElementById("prev-button");
-const nextButton = document.getElementById("next-button");
-const trackTitle = document.getElementById("track-title");
-const trackArtist = document.getElementById("track-artist");
-const trackCover = document.getElementById("track-cover");
-const progressBar = document.getElementById("progress-bar");
-const progressBarContainer = document.getElementById("progress-bar-container");
-const lcdText = document.getElementById("lcd-text");
-const leftReel = document.querySelector(".left-reel");
-const rightReel = document.querySelector(".right-reel");
+// ===== DOM ЭЛЕМЕНТЫ =====
+const audioPlayer = document.getElementById('audio-player');
+const btnPlay = document.getElementById('btn-play');
+const btnStop = document.getElementById('btn-stop');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const btnShuffle = document.getElementById('btn-shuffle');
+const btnRepeat = document.getElementById('btn-repeat');
+const playIcon = document.getElementById('play-icon');
+const volumeSlider = document.getElementById('volume-slider');
+const volumeValue = document.getElementById('volume-value');
 
+// Дисплей
+const trackTitle = document.getElementById('track-title');
+const trackArtist = document.getElementById('track-artist');
+const statusIcon = document.getElementById('status-icon');
+const statusText = document.getElementById('status-text');
+const genreText = document.getElementById('genre-text');
+const genreIcon = document.querySelector('.genre-icon');
+const currentTimeEl = document.getElementById('current-time');
+const totalTimeEl = document.getElementById('total-time');
+const progressBar = document.getElementById('progress-bar');
+const progressHead = document.getElementById('progress-head');
+const progressContainer = document.getElementById('progress-container');
+const queryText = document.getElementById('query-text');
+const queueCount = document.getElementById('queue-count');
+const visualizer = document.getElementById('visualizer');
+const cassetteLabel = document.getElementById('cassette-label');
+
+// Катушки
+const leftReel = document.getElementById('left-reel');
+const rightReel = document.getElementById('right-reel');
+
+// ===== СОСТОЯНИЕ =====
 let currentTrack = null;
-let isPlaying = false; // Состояние воспроизведения
-let isUpdating = false; // Флаг, чтобы избежать множественных запросов на изменение трека
+let isPlaying = false;
+let isUpdating = false;
 
-// Функция для обновления UI
+// ===== МАППИНГ ЖАНРОВ =====
+const genreMapping = {
+  'rock': { icon: '🎸', name: 'ROCK' },
+  'pop': { icon: '🎤', name: 'POP' },
+  'jazz': { icon: '🎷', name: 'JAZZ' },
+  'classical': { icon: '🎻', name: 'CLASSICAL' },
+  'electronic': { icon: '🎹', name: 'ELECTRONIC' },
+  'hip-hop': { icon: '🎧', name: 'HIP-HOP' },
+  'rap': { icon: '🎤', name: 'RAP' },
+  'metal': { icon: '🤘', name: 'METAL' },
+  'blues': { icon: '🎺', name: 'BLUES' },
+  'country': { icon: '🤠', name: 'COUNTRY' },
+  'reggae': { icon: '🌴', name: 'REGGAE' },
+  'soul': { icon: '💜', name: 'SOUL' },
+  'funk': { icon: '🕺', name: 'FUNK' },
+  'disco': { icon: '🪩', name: 'DISCO' },
+  'punk': { icon: '⚡', name: 'PUNK' },
+  'indie': { icon: '🎵', name: 'INDIE' },
+  'alternative': { icon: '🔊', name: 'ALT' },
+  'default': { icon: '📻', name: 'RADIO' }
+};
+
+// ===== УТИЛИТЫ =====
+function formatTime(seconds) {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function detectGenre(query) {
+  if (!query) return genreMapping['default'];
+  const q = query.toLowerCase();
+  for (const [key, value] of Object.entries(genreMapping)) {
+    if (q.includes(key)) return value;
+  }
+  return genreMapping['default'];
+}
+
+function truncateText(text, maxLength = 30) {
+  if (!text) return '---';
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
+// ===== ОБНОВЛЕНИЕ UI =====
 function updateUI() {
-  if (currentTrack && currentTrack.current) {
-    trackTitle.textContent = currentTrack.current.title || "Неизвестный трек";
-    trackArtist.textContent = currentTrack.current.artist || "Неизвестный исполнитель";
-    trackCover.src = currentTrack.current.cover_url || "https://via.placeholder.com/150";
-    if (currentTrack.current.cover_url) {
-      trackCover.style.display = 'block';
-    } else {
-      trackCover.style.display = 'none';
-    }
-    lcdText.textContent = `${currentTrack.current.artist || "Неизв."} - ${currentTrack.current.title || "Неизв. трек"}`;
-  } else {
-    trackTitle.textContent = "Нет трека";
-    trackArtist.textContent = "";
-    trackCover.src = "";
-    trackCover.style.display = 'none';
-    lcdText.textContent = "Привет! Я твой Walkman!";
-  }
-
-  playPauseButton.textContent = isPlaying ? "⏸" : "▶";
-
+  // Кнопка Play/Pause
+  playIcon.textContent = isPlaying ? '⏸' : '▶';
+  btnPlay.querySelector('.btn-label').textContent = isPlaying ? 'PAUSE' : 'PLAY';
+  
+  // Визуализатор
   if (isPlaying) {
-    leftReel.classList.add("playing");
-    rightReel.classList.add("playing");
+    visualizer.classList.add('playing');
+    leftReel.classList.add('spinning');
+    rightReel.classList.add('spinning');
+    statusIcon.textContent = '▶️';
+    statusText.textContent = 'NOW PLAYING';
   } else {
-    leftReel.classList.remove("playing");
-    rightReel.classList.remove("playing");
+    visualizer.classList.remove('playing');
+    leftReel.classList.remove('spinning');
+    rightReel.classList.remove('spinning');
+    statusIcon.textContent = '⏸️';
+    statusText.textContent = 'PAUSED';
   }
 }
 
-// Отправка команд боту (для Skip и Stop)
-async function sendBotCommand(command, query = "") {
-  // Для Telegram-бота FastAPI нужно будет создать эндпоинты для этих команд.
-  // Пока что, это заглушка.
-  console.log(`Отправлена команда боту: ${command} ${query}`);
-  // В реальном приложении здесь должен быть запрос к API FastAPI,
-  // который затем передаст команду боту Telegram.
-  // Например: fetch(`/api/command/${command}`, { method: 'POST', body: JSON.stringify({ query }) });
+function updateTrackInfo(session) {
+  if (!session) {
+    trackTitle.innerHTML = '<span>Ожидание трека...</span>';
+    trackArtist.textContent = '---';
+    queryText.textContent = '---';
+    queueCount.textContent = '0';
+    return;
+  }
+
+  // Название и исполнитель
+  const title = session.current || 'Загрузка...';
+  trackTitle.innerHTML = `<span>${truncateText(title, 40)}</span>`;
+  
+  // Если название длинное - включаем прокрутку
+  if (title.length > 25) {
+    trackTitle.classList.add('scrolling');
+  } else {
+    trackTitle.classList.remove('scrolling');
+  }
+  
+  trackArtist.textContent = session.query || '---';
+  
+  // Жанр
+  const genre = detectGenre(session.query);
+  genreIcon.textContent = genre.icon;
+  genreText.textContent = genre.name;
+  
+  // Очередь
+  queryText.textContent = truncateText(session.query, 15);
+  queueCount.textContent = session.playlist_len || 0;
+  
+  // Статус
+  if (session.last_error) {
+    statusIcon.textContent = '⚠️';
+    statusText.textContent = 'ERROR';
+  } else if (session.current) {
+    statusIcon.textContent = '📻';
+    statusText.textContent = 'RADIO MODE';
+  }
 }
 
-// Обработчики событий
-playPauseButton.addEventListener("click", async () => {
+// ===== ПРОГРЕСС БАР =====
+audioPlayer.addEventListener('timeupdate', () => {
+  if (audioPlayer.duration) {
+    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+    progressBar.style.width = `${progress}%`;
+    progressHead.style.left = `${progress}%`;
+    currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
+    totalTimeEl.textContent = formatTime(audioPlayer.duration);
+  }
+});
+
+progressContainer.addEventListener('click', (e) => {
+  if (audioPlayer.duration) {
+    const rect = progressContainer.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    audioPlayer.currentTime = (clickX / width) * audioPlayer.duration;
+  }
+});
+
+// ===== УПРАВЛЕНИЕ ВОСПРОИЗВЕДЕНИЕМ =====
+btnPlay.addEventListener('click', async () => {
   if (audioPlayer.paused && audioPlayer.src) {
     try {
       await audioPlayer.play();
       isPlaying = true;
     } catch (error) {
-      console.warn("Автоматическое воспроизведение заблокировано браузером. Нажмите Play вручную.", error);
-      isPlaying = false; // Не удалось воспроизвести
+      console.warn('Autoplay blocked:', error);
+      isPlaying = false;
     }
   } else {
     audioPlayer.pause();
@@ -73,118 +180,145 @@ playPauseButton.addEventListener("click", async () => {
   updateUI();
 });
 
-prevButton.addEventListener("click", () => {
-  // sendBotCommand("prev"); // если есть API для "предыдущего трека"
-  console.log("Предыдущий трек (функционал пока не реализован)");
+btnStop.addEventListener('click', async () => {
+  audioPlayer.pause();
+  audioPlayer.currentTime = 0;
+  isPlaying = false;
+  updateUI();
+  
+  // Отправляем команду stop на сервер
+  try {
+    await fetch('/api/radio/stop', { method: 'POST' });
+  } catch (e) {
+    console.error('Stop error:', e);
+  }
 });
 
-nextButton.addEventListener("click", () => {
-  sendBotCommand("skip"); // Отправляем команду Skip боту
+btnNext.addEventListener('click', async () => {
+  try {
+    await fetch('/api/radio/skip', { method: 'POST' });
+  } catch (e) {
+    console.error('Skip error:', e);
+  }
 });
 
+btnPrev.addEventListener('click', () => {
+  // Перемотка в начало текущего трека
+  audioPlayer.currentTime = 0;
+});
 
-audioPlayer.addEventListener("play", () => {
+// ===== TOGGLE КНОПКИ =====
+btnShuffle.addEventListener('click', () => {
+  btnShuffle.classList.toggle('active');
+});
+
+btnRepeat.addEventListener('click', () => {
+  btnRepeat.classList.toggle('active');
+  audioPlayer.loop = btnRepeat.classList.contains('active');
+});
+
+// ===== ГРОМКОСТЬ =====
+volumeSlider.addEventListener('input', (e) => {
+  const value = e.target.value;
+  audioPlayer.volume = value / 100;
+  volumeValue.textContent = value;
+});
+
+// Инициализация громкости
+audioPlayer.volume = volumeSlider.value / 100;
+
+// ===== СОБЫТИЯ АУДИО =====
+audioPlayer.addEventListener('play', () => {
   isPlaying = true;
   updateUI();
 });
 
-audioPlayer.addEventListener("pause", () => {
+audioPlayer.addEventListener('pause', () => {
   isPlaying = false;
   updateUI();
 });
 
-audioPlayer.addEventListener("ended", () => {
+audioPlayer.addEventListener('ended', async () => {
   isPlaying = false;
   updateUI();
-  sendBotCommand("skip"); // Автоматический переход к следующему треку
-});
-
-audioPlayer.addEventListener("timeupdate", () => {
-  if (audioPlayer.duration) {
-    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-    progressBar.style.width = `${progress}%`;
-  }
-});
-
-progressBarContainer.addEventListener("click", (e) => {
-  if (audioPlayer.duration) {
-    const width = progressBarContainer.clientWidth;
-    const clickX = e.offsetX;
-    const duration = audioPlayer.duration;
-    audioPlayer.currentTime = (clickX / width) * duration;
-  }
-});
-
-// Периодическое получение статуса радио и обновление UI
-async function tick() {
-    if (isUpdating) return;
-    isUpdating = true;
-
+  
+  // Автоматический skip
+  if (!audioPlayer.loop) {
     try {
-        const r = await fetch("/api/radio/status");
-        const j = await r.json();
-
-        const sessions = j.sessions;
-        if (Object.keys(sessions).length > 0) {
-            const firstSessionKey = Object.keys(sessions)[0];
-            const session = sessions[firstSessionKey];
-
-            if (session.current) {
-                // Если трек изменился или это первый трек
-                if (!currentTrack || currentTrack.current.id !== session.current.id) {
-                    console.log("Новый трек:", session.current);
-                    currentTrack = session; // Сохраняем всю сессию для удобства
-                    updateUI();
-
-                    if (currentTrack.current.audio_url && audioPlayer.src !== currentTrack.current.audio_url) {
-                        audioPlayer.src = currentTrack.current.audio_url;
-                        audioPlayer.load();
-                        try {
-                            // Попытка автоматического воспроизведения. Может быть заблокирована браузером.
-                            await audioPlayer.play();
-                            isPlaying = true;
-                        } catch (error) {
-                            console.warn("Автоматическое воспроизведение заблокировано браузером. Нажмите Play вручную.", error);
-                            isPlaying = false;
-                        }
-                    }
-                }
-            } else {
-                // Нет текущего трека в сессии
-                if (currentTrack) {
-                    console.log("Текущий трек исчез из сессии");
-                    currentTrack = null;
-                    audioPlayer.pause();
-                    audioPlayer.src = "";
-                    isPlaying = false;
-                    updateUI();
-                }
-            }
-        } else {
-            // Нет активных сессий
-            if (currentTrack) {
-                console.log("Нет активных сессий");
-                currentTrack = null;
-                audioPlayer.pause();
-                audioPlayer.src = "";
-                isPlaying = false;
-                updateUI();
-            }
-        }
+      await fetch('/api/radio/skip', { method: 'POST' });
     } catch (e) {
-        console.error("Ошибка при получении статуса радио:", e);
-        lcdText.textContent = "Ошибка загрузки статуса...";
-        trackTitle.textContent = "Ошибка загрузки";
-        trackArtist.textContent = "";
-        trackCover.style.display = 'none';
+      console.error('Auto-skip error:', e);
+    }
+  }
+});
+
+// ===== ПОЛУЧЕНИЕ СТАТУСА =====
+async function tick() {
+  if (isUpdating) return;
+  isUpdating = true;
+  
+  try {
+    const response = await fetch('/api/radio/status');
+    const data = await response.json();
+    
+    const sessions = data.sessions || {};
+    const sessionKeys = Object.keys(sessions);
+    
+    if (sessionKeys.length > 0) {
+      const session = sessions[sessionKeys[0]];
+      updateTrackInfo(session);
+      
+      // Если есть audio_url и он изменился
+      if (session.audio_url && audioPlayer.src !== session.audio_url) {
+        audioPlayer.src = session.audio_url;
+        audioPlayer.load();
+        try {
+          await audioPlayer.play();
+          isPlaying = true;
+        } catch (error) {
+          console.warn('Autoplay blocked:', error);
+          isPlaying = false;
+        }
+        updateUI();
+      }
+    } else {
+      updateTrackInfo(null);
+      if (currentTrack) {
+        audioPlayer.pause();
+        audioPlayer.src = '';
         isPlaying = false;
         updateUI();
-    } finally {
-        isUpdating = false;
+      }
     }
+    
+    currentTrack = sessionKeys.length > 0 ? sessions[sessionKeys[0]] : null;
+    
+  } catch (error) {
+    console.error('Status fetch error:', error);
+    statusIcon.textContent = '❌';
+    statusText.textContent = 'CONNECTION ERROR';
+  } finally {
+    isUpdating = false;
+  }
 }
 
-// Инициализация и запуск опроса
-updateUI(); // Первичное обновление UI
+// ===== TELEGRAM WEBAPP =====
+if (window.Telegram && window.Telegram.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+  
+  // Применяем тему Telegram
+  document.body.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
+}
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+updateUI();
 tick();
 setInterval(tick, 3000);
+
+// Анимация визуализатора при загрузке
+const bars = visualizer.querySelectorAll('.bar');
+bars.forEach((bar, index) => {
+  bar.style.height = `${Math.random() * 20 + 5}px`;
+});
