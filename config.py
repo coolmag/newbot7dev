@@ -32,6 +32,9 @@ class Config:
 
     @staticmethod
     def from_env() -> "Config":
+        admin_id_str = os.getenv("ADMIN_ID")
+        admin_id = int(admin_id_str) if admin_id_str else None
+
         return Config(
             bot_token=_require("BOT_TOKEN"),
             webhook_url=_require("WEBHOOK_URL"),
