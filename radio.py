@@ -38,6 +38,7 @@ class RadioSession:
     skip_event: asyncio.Event = field(default_factory=asyncio.Event)
     fails_in_row: int = 0
     last_error: Optional[str] = None
+    audio_file_path: Optional[Path] = None # Добавлено
 
 
 class RadioManager:
@@ -61,11 +62,27 @@ class RadioManager:
     def status(self) -> dict:
         data = {}
         for chat_id, s in self._sessions.items():
+            current_track_info = None
+            if s.current:
+                audio_url = None
+                if s.audio_file_path and s.audio_file_path.exists():
+                    audio_url = f"/audio/{s.current.id}" # Будет обработан FastAPI
+
+                current_track_info = {
+                    "id": s.current.id,
+                    "title": s.current.title,
+                    "artist": s.current.artist,
+                    "cover_url": s.current.cover_url,
+                    "audio_url": audio_url,
+                    "duration": s.current.duration,
+                    "webpage_url": s.current.webpage_url,
+                }
+
             data[str(chat_id)] = {
                 "chat_id": chat_id,
                 "query": s.query,
                 "started_at": s.started_at,
-                "current": (s.current.title if s.current else None),
+                "current": current_track_info, # Теперь объект с полной информацией
                 "playlist_len": len(s.playlist),
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
@@ -186,12 +203,16 @@ class RadioManager:
                         caption=track.webpage_url,
                     )
 
-                # чистим файл
-                try:
-                    file_path.unlink()
-                    file_path.parent.rmdir()
-                except Exception:
-                    pass
+                # Сохраняем путь к файлу для веб-плеера
+                s.audio_file_path = file_path
+
+                # Временно не чистим файл для тестирования веб-плеера
+                # TODO: реализовать механизм очистки файлов по истечении срока жизни или по запросу
+                # try:
+                #     file_path.unlink()
+                #     file_path.parent.rmdir()
+                # except Exception:
+                #     pass
 
             except asyncio.TimeoutError:
                 s.last_error = "download timeout"

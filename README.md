@@ -1,4 +1,4 @@
-## Music Bot Stable (FastAPI webhook + PTB)  DEV7
+## Music Bot Stable (FastAPI webhook + PTB)
 
 ### Env vars
 - BOT_TOKEN — токен бота

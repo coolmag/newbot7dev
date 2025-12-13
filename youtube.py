@@ -22,6 +22,8 @@ class Track:
     title: str
     webpage_url: str
     duration: Optional[int] = None  # seconds
+    artist: Optional[str] = None
+    cover_url: Optional[str] = None
 
 
 STOP_PATTERNS: list[re.Pattern[str]] = [
@@ -113,7 +115,9 @@ async def yt_search(
             if _is_blocked(title):
                 continue
             webpage_url = url if (url and url.startswith("http")) else f"https://www.youtube.com/watch?v={vid}"
-            tracks.append(Track(id=vid, title=title, webpage_url=webpage_url, duration=data.get("duration")))
+            artist = data.get("artist") or data.get("channel") # Попытка получить artist или channel
+            cover_url = data.get("thumbnail") # URL обложки
+            tracks.append(Track(id=vid, title=title, webpage_url=webpage_url, duration=data.get("duration"), artist=artist, cover_url=cover_url))
         except Exception:
             continue
 

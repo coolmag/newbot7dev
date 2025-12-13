@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from telegram import Update
@@ -104,3 +104,19 @@ async def telegram_webhook(req: Request):
     update = Update.de_json(data, tg_app.bot)
     await tg_app.process_update(update)
     return {"ok": True}
+
+@app.get("/audio/{track_id}")
+async def get_audio_file(track_id: str):
+    radio = app.state.radio
+    # Найти сессию, которая содержит этот track_id в текущем треке
+    # (предполагая, что трек_id уникален глобально для текущего воспроизведения)
+    for chat_id, session in radio._sessions.items(): # Доступ к внутренним сессиям RadioManager
+        if session.current and session.current.id == track_id and session.audio_file_path:
+            # Проверить существование файла
+            if session.audio_file_path.exists():
+                return FileResponse(session.audio_file_path, media_type="audio/mpeg")
+            else:
+                logger.warning("Audio file not found for track_id: %s at path: %s", track_id, session.audio_file_path)
+                return JSONResponse({"error": "Audio file not found"}, status_code=404)
+    logger.warning("Track_id not found in any active session: %s", track_id)
+    return JSONResponse({"error": "Track not found or not currently playing"}, status_code=404)
