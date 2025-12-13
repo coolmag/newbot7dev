@@ -8,28 +8,47 @@ body {
     min-height: 100vh;
     margin: 0;
     overflow: hidden;
+    perspective: 1000px; /* Для 3D-эффектов */
 }
 
 .walkman-player {
-    width: 320px;
-    height: 500px;
-    background: linear-gradient(to bottom, #3a3a3a, #1a1a1a);
-    border-radius: 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 5px rgba(255, 255, 255, 0.1);
+    width: 340px; /* Немного шире */
+    height: 580px; /* Немного выше */
+    background: linear-gradient(to bottom, #5d5d5d, #2a2a2a); /* Металлический оттенок */
+    border-radius: 25px;
+    box-shadow:
+        0 15px 40px rgba(0, 0, 0, 0.6),
+        0 0 0 5px rgba(255, 255, 255, 0.05) inset;
     display: flex;
     flex-direction: column;
     padding: 20px;
     box-sizing: border-box;
     position: relative;
-    overflow: hidden;
+    transform: rotateX(5deg) rotateY(-5deg); /* Небольшой 3D-наклон */
+    transition: transform 0.3s ease;
+    border: 1px solid #777; /* Дополнительная рамка */
+}
+
+.walkman-player:hover {
+    transform: rotateX(0deg) rotateY(0deg);
+}
+
+.player-body {
+    background: #333; /* Внутренний фон */
+    border-radius: 15px;
+    padding: 15px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
 .player-screen {
     background: #0d0d0d;
     border: 2px solid #222;
     border-radius: 8px;
-    flex-grow: 1;
-    margin-bottom: 20px;
+    min-height: 150px; /* Фиксированная высота для экрана */
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -37,49 +56,132 @@ body {
     padding: 10px;
     overflow: hidden;
     position: relative;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.7);
 }
 
 .track-cover {
     width: 100%;
-    height: 100%;
-    object-fit: contain; /* Или 'cover' */
+    height: 100%; /* Занимает доступное пространство */
+    object-fit: contain;
     border-radius: 4px;
-    margin-bottom: 10px;
-    max-height: 200px; /* Ограничить высоту обложки */
+    max-height: 180px;
+    margin-bottom: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .track-info {
     text-align: center;
     width: 100%;
-    overflow: hidden;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
+    margin-top: auto; /* Прижимает информацию вниз экрана */
 }
 
 .track-title {
-    font-size: 1.2em;
+    font-size: 1.1em;
     font-weight: bold;
     color: #fff;
-    margin-bottom: 5px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .track-artist {
-    font-size: 0.9em;
+    font-size: 0.85em;
     color: #bbb;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+.cassette-area {
+    background: linear-gradient(to right, #444, #666, #444); /* Более выраженный градиент */
+    border-radius: 8px;
+    padding: 10px;
+    height: 120px; /* Высота для кассеты */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.6);
+    border: 1px solid #555;
+}
+
+.tape-window {
+    width: 90%;
+    height: 70px;
+    background: #222;
+    border-radius: 5px;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 5px;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
+    border: 1px solid #111;
+}
+
+.tape-reel {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #000;
+    border: 2px solid #555;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.9);
+}
+
+.tape-reel::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%;
+    height: 60%;
+    border-radius: 50%;
+    border: 2px dashed #444; /* Имитация ленты */
+}
+
+/* Анимация вращения пасиков */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.tape-reel.playing {
+    animation: spin 1s linear infinite;
+}
+
+.lcd-display {
+    background: #0b2e0b; /* Темно-зеленый фон */
+    border-radius: 3px;
+    padding: 3px 8px;
+    margin-top: 8px;
+    width: 90%;
+    text-align: left;
+    font-family: 'Press Start 2P', cursive; /* Можно добавить шрифт в head, если нужно */
+    font-size: 0.7em;
+    color: #00ff00; /* Ярко-зеленый текст */
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.7);
+    border: 1px solid #005f00;
+    text-shadow: 0 0 5px #00ff00; /* Небольшое свечение */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: clip; /* Обрезаем текст */
+    position: relative;
+}
+
 .player-controls {
-    background: #282828;
+    background: linear-gradient(to bottom, #4a4a4a, #2a2a2a);
     border-radius: 10px;
     padding: 15px 10px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 15px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+    border: 1px solid #555;
 }
 
 .progress-bar-container {
@@ -89,12 +191,13 @@ body {
     border-radius: 4px;
     overflow: hidden;
     cursor: pointer;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .progress-bar {
     height: 100%;
     width: 0%;
-    background: #00bcd4; /* Цвет прогресса */
+    background: linear-gradient(to right, #00bcd4, #008ba3); /* Градиентный прогресс */
     border-radius: 4px;
     transition: width 0.1s linear;
 }
@@ -107,7 +210,7 @@ body {
 }
 
 .control-button {
-    background: linear-gradient(to bottom, #555, #333);
+    background: linear-gradient(to bottom, #777, #555);
     border: none;
     border-radius: 50%;
     width: 50px;
@@ -120,25 +223,27 @@ body {
     align-items: center;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
     transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
 }
 
 .control-button:hover {
-    background: linear-gradient(to bottom, #666, #444);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    background: linear-gradient(to bottom, #888, #666);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
 }
 
 .control-button:active {
-    background: #222;
+    background: #444;
     transform: translateY(1px);
     box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
 }
 
 #play-pause-button {
-    width: 60px;
-    height: 60px;
-    font-size: 1.8em;
-    background: linear-gradient(to bottom, #00bcd4, #008ba3); /* Голубой */
+    width: 65px; /* Больше */
+    height: 65px;
+    font-size: 2em; /* Больше иконка */
+    background: linear-gradient(to bottom, #00bcd4, #008ba3);
+    border: 2px solid #005f00; /* Добавляем рамку для выразительности */
 }
 
 #play-pause-button:hover {
@@ -148,3 +253,4 @@ body {
 #play-pause-button:active {
     background: #007c8a;
 }
+```
