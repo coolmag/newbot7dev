@@ -56,7 +56,7 @@ class RadioManager:
 
         self._sessions: Dict[int, RadioSession] = {}
         self._tasks: Dict[int, asyncio.Task[None]] = {}
-        self._dl_sem = asyncio.Semaphore(self._settings.MAX_CONCURRENT_DOWNLOADS) # Используем MAX_CONCURRENT_DOWNLOADS из Settings
+
 
     def status(self) -> dict:
         data = {}

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # --- Настройки загрузчика ---
     MAX_QUERY_LENGTH: int = 150
     DOWNLOAD_TIMEOUT_S: int = 120
+    MAX_CONCURRENT_DOWNLOADS: int = 2
     
     # --- Настройки для команды /play ---
     PLAY_MAX_DURATION_S: int = 720    # 12 минут
