@@ -162,10 +162,21 @@ class YouTubeDownloader(BaseDownloader):
             return DownloadResult(success=False, error="Файл не найден после скачивания")
 
         except asyncio.TimeoutError:
+            await self._cache.blacklist_track_id(video_id) # Blacklist on timeout
             return DownloadResult(success=False, error="Таймаут")
-        except Exception as e:
-            if "Requested format is not available" in str(e):
+        except yt_dlp.utils.DownloadError as e:
+            error_msg = str(e)
+            await self._cache.blacklist_track_id(video_id) # Blacklist on any download error
+            if "Requested format is not available" in error_msg:
                 return DownloadResult(success=False, error="Формат больше не поддерживается YouTube")
+            return DownloadResult(success=False, error=error_msg[:200])
+        except yt_dlp.utils.ExtractorError as e: # Catch all ExtractorError
+            error_msg = str(e)
+            await self._cache.blacklist_track_id(video_id) # Blacklist on any extractor error
+            if "Requested format is not available" in error_msg:
+                return DownloadResult(success=False, error="Формат больше не поддерживается YouTube")
+            return DownloadResult(success=False, error=error_msg[:200])
+        except Exception as e:
             logger.error(f"YouTube fatal: {e}", exc_info=True)
             return DownloadResult(success=False, error="Ошибка скачивания")
 
