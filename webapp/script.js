@@ -35,133 +35,34 @@ const rightReel = document.getElementById('right-reel');
 let currentTrack = null;
 let isPlaying = false;
 let isUpdating = false;
+let chatId = null;
 
-// ===== МАППИНГ ЖАНРОВ =====
-const genreMapping = {
-  'rock': { icon: '🎸', name: 'ROCK' },
-  'pop': { icon: '🎤', name: 'POP' },
-  'jazz': { icon: '🎷', name: 'JAZZ' },
-  'classical': { icon: '🎻', name: 'CLASSICAL' },
-  'electronic': { icon: '🎹', name: 'ELECTRONIC' },
-  'hip-hop': { icon: '🎧', name: 'HIP-HOP' },
-  'rap': { icon: '🎤', name: 'RAP' },
-  'metal': { icon: '🤘', name: 'METAL' },
-  'blues': { icon: '🎺', name: 'BLUES' },
-  'country': { icon: '🤠', name: 'COUNTRY' },
-  'reggae': { icon: '🌴', name: 'REGGAE' },
-  'soul': { icon: '💜', name: 'SOUL' },
-  'funk': { icon: '🕺', name: 'FUNK' },
-  'disco': { icon: '🪩', name: 'DISCO' },
-  'punk': { icon: '⚡', name: 'PUNK' },
-  'indie': { icon: '🎵', name: 'INDIE' },
-  'alternative': { icon: '🔊', name: 'ALT' },
-  'default': { icon: '📻', name: 'RADIO' }
-};
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+function initialize() {
+    const urlParams = new URLSearchParams(window.location.search);
+    chatId = urlParams.get('chat_id');
+    if (!chatId) {
+        console.error("chat_id is missing from URL");
+        statusText.textContent = 'ERROR: chat_id missing';
+    }
 
-// ===== УТИЛИТЫ =====
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+    updateUI();
+    tick();
+    setInterval(tick, 3000);
+
+    // Анимация визуализатора при загрузке
+    const bars = visualizer.querySelectorAll('.bar');
+    bars.forEach((bar, index) => {
+        bar.style.height = `${Math.random() * 20 + 5}px`;
+    });
+
+    if (window.Telegram && window.Telegram.WebApp) {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        document.body.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
+    }
 }
-
-function detectGenre(query) {
-  if (!query) return genreMapping['default'];
-  const q = query.toLowerCase();
-  for (const [key, value] of Object.entries(genreMapping)) {
-    if (q.includes(key)) return value;
-  }
-  return genreMapping['default'];
-}
-
-function truncateText(text, maxLength = 30) {
-  if (!text) return '---';
-  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
-
-// ===== ОБНОВЛЕНИЕ UI =====
-function updateUI() {
-  // Кнопка Play/Pause
-  playIcon.textContent = isPlaying ? '⏸' : '▶';
-  btnPlay.querySelector('.btn-label').textContent = isPlaying ? 'PAUSE' : 'PLAY';
-  
-  // Визуализатор
-  if (isPlaying) {
-    visualizer.classList.add('playing');
-    leftReel.classList.add('spinning');
-    rightReel.classList.add('spinning');
-    statusIcon.textContent = '▶️';
-    statusText.textContent = 'NOW PLAYING';
-  } else {
-    visualizer.classList.remove('playing');
-    leftReel.classList.remove('spinning');
-    rightReel.classList.remove('spinning');
-    statusIcon.textContent = '⏸️';
-    statusText.textContent = 'PAUSED';
-  }
-}
-
-function updateTrackInfo(session) {
-  if (!session) {
-    trackTitle.innerHTML = '<span>Ожидание трека...</span>';
-    trackArtist.textContent = '---';
-    queryText.textContent = '---';
-    queueCount.textContent = '0';
-    return;
-  }
-
-  // Название и исполнитель
-  const title = session.current || 'Загрузка...';
-  trackTitle.innerHTML = `<span>${truncateText(title, 40)}</span>`;
-  
-  // Если название длинное - включаем прокрутку
-  if (title.length > 25) {
-    trackTitle.classList.add('scrolling');
-  } else {
-    trackTitle.classList.remove('scrolling');
-  }
-  
-  trackArtist.textContent = session.query || '---';
-  
-  // Жанр
-  const genre = detectGenre(session.query);
-  genreIcon.textContent = genre.icon;
-  genreText.textContent = genre.name;
-  
-  // Очередь
-  queryText.textContent = truncateText(session.query, 15);
-  queueCount.textContent = session.playlist_len || 0;
-  
-  // Статус
-  if (session.last_error) {
-    statusIcon.textContent = '⚠️';
-    statusText.textContent = 'ERROR';
-  } else if (session.current) {
-    statusIcon.textContent = '📻';
-    statusText.textContent = 'RADIO MODE';
-  }
-}
-
-// ===== ПРОГРЕСС БАР =====
-audioPlayer.addEventListener('timeupdate', () => {
-  if (audioPlayer.duration) {
-    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-    progressBar.style.width = `${progress}%`;
-    progressHead.style.left = `${progress}%`;
-    currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
-    totalTimeEl.textContent = formatTime(audioPlayer.duration);
-  }
-});
-
-progressContainer.addEventListener('click', (e) => {
-  if (audioPlayer.duration) {
-    const rect = progressContainer.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    audioPlayer.currentTime = (clickX / width) * audioPlayer.duration;
-  }
-});
 
 // ===== УПРАВЛЕНИЕ ВОСПРОИЗВЕДЕНИЕМ =====
 btnPlay.addEventListener('click', async () => {
@@ -186,17 +87,26 @@ btnStop.addEventListener('click', async () => {
   isPlaying = false;
   updateUI();
   
-  // Отправляем команду stop на сервер
+  if (!chatId) return;
   try {
-    await fetch('/api/radio/stop', { method: 'POST' });
+    await fetch('/api/radio/stop', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId })
+    });
   } catch (e) {
     console.error('Stop error:', e);
   }
 });
 
 btnNext.addEventListener('click', async () => {
+  if (!chatId) return;
   try {
-    await fetch('/api/radio/skip', { method: 'POST' });
+    await fetch('/api/radio/skip', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId })
+    });
   } catch (e) {
     console.error('Skip error:', e);
   }
@@ -242,10 +152,15 @@ audioPlayer.addEventListener('ended', async () => {
   isPlaying = false;
   updateUI();
   
+  if (!chatId) return;
   // Автоматический skip
   if (!audioPlayer.loop) {
     try {
-      await fetch('/api/radio/skip', { method: 'POST' });
+      await fetch('/api/radio/skip', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId })
+      });
     } catch (e) {
       console.error('Auto-skip error:', e);
     }
@@ -254,18 +169,16 @@ audioPlayer.addEventListener('ended', async () => {
 
 // ===== ПОЛУЧЕНИЕ СТАТУСА =====
 async function tick() {
-  if (isUpdating) return;
+  if (isUpdating || !chatId) return;
   isUpdating = true;
   
   try {
-    const response = await fetch('/api/radio/status');
+    const response = await fetch(`/api/radio/status?chat_id=${chatId}`);
     const data = await response.json();
     
-    const sessions = data.sessions || {};
-    const sessionKeys = Object.keys(sessions);
-    
-    if (sessionKeys.length > 0) {
-      const session = sessions[sessionKeys[0]];
+    const session = data.sessions ? data.sessions[chatId] : null;
+
+    if (session) {
       updateTrackInfo(session);
       
       // Если есть audio_url и он изменился
@@ -291,7 +204,7 @@ async function tick() {
       }
     }
     
-    currentTrack = sessionKeys.length > 0 ? sessions[sessionKeys[0]] : null;
+    currentTrack = session;
     
   } catch (error) {
     console.error('Status fetch error:', error);
@@ -303,22 +216,5 @@ async function tick() {
 }
 
 // ===== TELEGRAM WEBAPP =====
-if (window.Telegram && window.Telegram.WebApp) {
-  const tg = window.Telegram.WebApp;
-  tg.ready();
-  tg.expand();
-  
-  // Применяем тему Telegram
-  document.body.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
-}
-
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-updateUI();
-tick();
-setInterval(tick, 3000);
-
-// Анимация визуализатора при загрузке
-const bars = visualizer.querySelectorAll('.bar');
-bars.forEach((bar, index) => {
-  bar.style.height = `${Math.random() * 20 + 5}px`;
-});
+// Заменено на вызов в initialize
+initialize();
