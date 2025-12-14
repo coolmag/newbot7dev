@@ -1,3 +1,5 @@
+console.log("script.js loaded and running");
+
 let currentTrack = null;
 let isPlaying = false;
 let isUpdating = false;
@@ -213,6 +215,7 @@ audioPlayer.addEventListener('ended', async () => {
 
 // ===== ПОЛУЧЕНИЕ СТАТУСА =====
 async function tick() {
+  console.log("Tick function called");
   if (isUpdating) return;
   isUpdating = true;
   
@@ -224,6 +227,10 @@ async function tick() {
     const sessionKeys = Object.keys(sessions);
     const session = sessionKeys.length > 0 ? sessions[sessionKeys[0]] : null;
     
+    if (session && session._debug_info) {
+        console.log("Debug Info:", session._debug_info);
+    }
+
     updateTrackInfo(session);
 
     if (session && session.current && session.current.audio_url) {
