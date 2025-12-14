@@ -111,13 +111,17 @@ class YouTubeDownloader(BaseDownloader):
         else:
             options.update({
                 'format': 'bestaudio[ext=m4a]/bestaudio/best[filesize<20M]/bestaudio/best[height<=480]/best[ext=mp4]/best',
-                'format_sort': ['ext:mp3>m4a>webm>opus>mp4', 'br:192', 'size+'],
+                'format_sort': ['ext:mp3>m4a>webm>opus>mp4', 'br:192'], # Убран 'size+'
                 'outtmpl': str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
-                'extract_flat': False,
-                # 'postprocessors': [], # Удалено полностью
+                'extract_flat': False, # Установлено в False для загрузки
+                'postprocessors': [{  # Корректная секция postprocessors
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
                 'retries': 10,
                 'fragment_retries': 10,
             })
@@ -199,7 +203,16 @@ class YouTubeDownloader(BaseDownloader):
         if cached: return cached
 
         try:
-            track_identifier = query_or_id if is_id else (await self._find_best_match(query_or_id, self._settings.PLAY_MIN_DURATION_S, self._settings.PLAY_MAX_DURATION_S) or {}).get("identifier")
+            if is_id:
+                track_identifier = query_or_id
+            else:
+                best = await self._find_best_match(
+                    query_or_id,
+                    min_duration=self._settings.PLAY_MIN_DURATION_S,
+                    max_duration=self._settings.PLAY_MAX_DURATION_S
+                )
+                track_identifier = best.identifier if best else None
+
             if not track_identifier:
                 return DownloadResult(success=False, error="Ничего не найдено.")
 
