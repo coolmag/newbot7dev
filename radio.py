@@ -79,6 +79,12 @@ class RadioManager:
                 "playlist_len": len(s.playlist),
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
+                "_debug_info": {
+                    "path": str(s.audio_file_path) if s.audio_file_path else None,
+                    "exists": s.audio_file_path.exists() if s.audio_file_path else False,
+                    "identifier": s.current.identifier if s.current else None,
+                    "audio_url": current_track_info.get("audio_url") if current_track_info else None,
+                }
             }
         logger.debug("Full radio status: %s", data)
         return {"sessions": data}
