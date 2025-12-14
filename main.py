@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import logging
+import mimetypes # Добавлено
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -147,15 +146,12 @@ async def get_audio_file(track_id: str):
         if session.current and session.current.identifier == track_id:
             logger.info(f"Found session for track_id {track_id}. Path: {session.audio_file_path}")
             if session.audio_file_path and session.audio_file_path.exists():
-                file_extension = session.audio_file_path.suffix.lower()
-                media_type = "audio/mpeg" # Default for mp3
-                if file_extension == ".m4a":
-                    media_type = "audio/mp4"
-                elif file_extension == ".webm":
-                    media_type = "audio/webm"
+                file_path = session.audio_file_path
+                media_type, _ = mimetypes.guess_type(str(file_path))
+                media_type = media_type or "application/octet-stream"
                 
-                logger.info(f"Serving file: {session.audio_file_path} with media_type: {media_type}")
-                return FileResponse(session.audio_file_path, media_type=media_type)
+                logger.info(f"Serving file: {file_path} with media_type: {media_type}")
+                return FileResponse(file_path, media_type=media_type, headers={"Cache-Control": "public, max-age=3600"})
             else:
                 logger.error(f"Audio file link exists, but file not found on disk for track_id: {track_id} at path: {session.audio_file_path}")
                 raise HTTPException(status_code=404, detail="Audio file not found on disk, it might have been cleaned up.")

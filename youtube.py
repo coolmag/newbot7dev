@@ -110,18 +110,15 @@ class YouTubeDownloader(BaseDownloader):
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
             options.update({
-                'format': 'bestaudio/best',
+                'format': 'bestaudio[ext=m4a]/bestaudio', # Приоритет m4a
                 'outtmpl': str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
                 'noprogress': True,
                 'extract_flat': False,
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
+                # 'postprocessors': [], # Удалено полностью
+                # 'format_sort': [], # Удалено полностью
                 'retries': 10,
                 'fragment_retries': 10,
                 "skip_unavailable_fragments": True,
