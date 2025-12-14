@@ -95,8 +95,10 @@ class RadioManager:
             t.cancel()
             try:
                 await t
-            except Exception:
-                pass
+            except asyncio.CancelledError:
+                logger.debug("Radio task for chat %s was cancelled.", chat_id)
+            except Exception as e:
+                logger.error("Error awaiting cancelled task for chat %s: %s", chat_id, e)
         self._sessions.pop(chat_id, None)
         self._tasks.pop(chat_id, None)
 
