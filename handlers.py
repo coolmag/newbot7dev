@@ -78,9 +78,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 "
                 f"*{current.get('title', 'N/A')}*
 "
-                f"_{current.get('artist', 'N/A')}_
+                f"_{current.get('artist', 'N/A')}_"
 
-"
                 f"🎧 *Запрос:* `{session['query']}`
 "
                 f"⌛ *В очереди:* `{session['playlist_len']}` треков"
@@ -191,15 +190,13 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
                 await query.edit_message_text(text="⏹️ Радио остановлено.")
             
             case "status":
-                # Удаляем старое сообщение и отправляем новое
                 try:
                     await query.message.delete()
                 except BadRequest:
                     pass
-                await send_status(chat_id, chat_type, query.message.chat.send_message)
+                await send_status(chat_id, chat_type, chat.send_message)
             
             case _ if data.startswith("genre_"):
-                # Извлекаем жанр: "genre_hip_hop" → "hip_hop"
                 genre = data.removeprefix("genre_")
                 await radio.start(chat_id, genre)
                 await query.edit_message_text(
