@@ -56,8 +56,7 @@ async def lifespan(app: FastAPI):
 
     await tg_app.initialize()
     await tg_app.start()
-
-    # Установка команд бота
+    
     await tg_app.bot.set_my_commands([
         ("start", "🚀 Запуск/Перезапуск"),
         ("menu", "📖 Главное меню"),
@@ -68,7 +67,6 @@ async def lifespan(app: FastAPI):
         ("status", "📊 Статус радио"),
     ])
 
-    # Установка вебхука
     await tg_app.bot.set_webhook(url=settings.WEBHOOK_URL)
     logger.info("✅ Webhook set to: %s", settings.WEBHOOK_URL)
 

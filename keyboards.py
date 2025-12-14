@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram.constants import ChatType
 from config import get_settings
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -26,14 +27,19 @@ def get_genre_keyboard() -> InlineKeyboardMarkup:
     keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_status_keyboard(base_url: str, chat_id: int) -> InlineKeyboardMarkup:
+def get_status_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
     """Возвращает клавиатуру для сообщения о статусе."""
     webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
+    if chat_type == ChatType.PRIVATE:
+        player_button = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
+    else:
+        player_button = InlineKeyboardButton("🎧 Открыть плеер", url=webapp_url)
+        
     keyboard = [
         [
             InlineKeyboardButton("⏭️", callback_data="skip_track"),
             InlineKeyboardButton("⏹️", callback_data="stop_radio"),
-            InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url)),
+            player_button,
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

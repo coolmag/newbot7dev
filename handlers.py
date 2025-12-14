@@ -32,10 +32,15 @@ async def safe_answer_callback(query, text: str | None = None) -> None:
             return
         raise
 
-def player_markup(base_url: str, chat_id: int) -> InlineKeyboardMarkup:
-    """Всегда возвращает кнопку WebApp плеера."""
+def player_markup(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
+    """Возвращает кнопку плеера, адаптированную под тип чата."""
     webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
-    btn = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
+    if chat_type == ChatType.PRIVATE:
+        # В личных чатах используем web_app для лучшей интеграции
+        btn = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
+    else:
+        # В группах web_app в обычном сообщении не работает, используем простую ссылку
+        btn = InlineKeyboardButton("🎧 Открыть плеер", url=webapp_url)
     return InlineKeyboardMarkup([[btn]])
 
 
@@ -44,7 +49,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         await update.effective_message.reply_text(
             "Привет! Я твой музыкальный бот.\n\n"
             "Используй /menu, чтобы открыть главное меню, или /radio <запрос>, чтобы сразу запустить радио.",
-            reply_markup=player_markup(settings.BASE_URL, update.effective_chat.id)
+            reply_markup=player_markup(settings.BASE_URL, update.effective_chat.type, update.effective_chat.id)
         )
 
     async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -62,9 +67,10 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
     async def player_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
+        chat_type = update.effective_chat.type
         await update.effective_message.reply_text(
             "Нажмите кнопку ниже, чтобы открыть веб-плеер:",
-            reply_markup=player_markup(settings.BASE_URL, chat_id),
+            reply_markup=player_markup(settings.BASE_URL, chat_type, chat_id),
         )
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -72,7 +78,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         if not q:
             q = "rock hits"
         await radio.start(update.effective_chat.id, q)
-        await update.effective_message.reply_text(f"✅ Радио запущено: {q}", reply_markup=player_markup(settings.BASE_URL, update.effective_chat.id))
+        await update.effective_message.reply_text(f"✅ Радио запущено: {q}", reply_markup=player_markup(settings.BASE_URL, update.effective_chat.type, update.effective_chat.id))
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)
@@ -86,8 +92,9 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         st = radio.status()
         s = st["sessions"].get(str(update.effective_chat.id))
         chat_id = update.effective_chat.id
+        chat_type = update.effective_chat.type
         if not s:
-            await update.effective_message.reply_text("Радио не запущено.", reply_markup=player_markup(settings.BASE_URL, chat_id))
+            await update.effective_message.reply_text("Радио не запущено.", reply_markup=player_markup(settings.BASE_URL, chat_type, chat_id))
             return
 
         current = s.get("current")
@@ -102,12 +109,12 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             await update.effective_message.reply_text(
                 text,
                 parse_mode="Markdown",
-                reply_markup=get_status_keyboard(settings.BASE_URL, chat_id)
+                reply_markup=get_status_keyboard(settings.BASE_URL, chat_type, chat_id)
             )
         else:
             await update.effective_message.reply_text(
                 "⏳ Подбираю следующий трек...",
-                reply_markup=player_markup(settings.BASE_URL, chat_id)
+                reply_markup=player_markup(settings.BASE_URL, chat_type, chat_id)
             )
 
     async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

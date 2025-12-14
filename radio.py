@@ -5,50 +5,43 @@ import random
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, Optional
+from typing import Deque, Dict, Optional, Callable
 from pathlib import Path
 
 import logging
 from telegram import Bot
 
-from youtube import YouTubeDownloader, BaseDownloader # Предполагаем, что youtube.py теперь содержит YouTubeDownloader
-from config import Settings # Используем Settings из нового config
-from models import TrackInfo, DownloadResult, Source # Импортируем из нового models
+from youtube import YouTubeDownloader
+from config import Settings
+from models import TrackInfo, DownloadResult
 
 logger = logging.getLogger("radio")
-
-
-
-
 
 @dataclass
 class RadioSession:
     chat_id: int
     query: str
     started_at: float = field(default_factory=lambda: time.time())
-    current: Optional[TrackInfo] = None # Изменено на TrackInfo
-    playlist: Deque[TrackInfo] = field(default_factory=deque) # Изменено на TrackInfo
+    current: Optional[TrackInfo] = None
+    playlist: Deque[TrackInfo] = field(default_factory=deque)
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     skip_event: asyncio.Event = field(default_factory=asyncio.Event)
     fails_in_row: int = 0
     last_error: Optional[str] = None
     audio_file_path: Optional[Path] = None
 
-
 class RadioManager:
     def __init__(
         self,
         bot: Bot,
-        settings: Settings, # Изменено: теперь принимаем Settings
-        youtube_downloader: YouTubeDownloader, # Добавлено: принимаем YouTubeDownloader
+        settings: Settings,
+        youtube_downloader: YouTubeDownloader,
     ) -> None:
         self.bot = bot
-        self._settings = settings # Сохраняем настройки
-        self.youtube_downloader = youtube_downloader # Сохраняем загрузчик
-
+        self._settings = settings
+        self.youtube_downloader = youtube_downloader
         self._sessions: Dict[int, RadioSession] = {}
         self._tasks: Dict[int, asyncio.Task[None]] = {}
-
 
     def status(self) -> dict:
         data = {}
@@ -62,14 +55,12 @@ class RadioManager:
                     "source": s.current.source,
                     "identifier": s.current.identifier,
                 }
-                # Логирование для отладки плеера
                 if s.audio_file_path and s.audio_file_path.exists() and s.current.identifier:
                     audio_url = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
                     current_track_info["audio_url"] = audio_url
                     logger.debug(f"[STATUS] Generated audio_url for chat {chat_id}: {audio_url}")
                 else:
                     logger.debug(f"[STATUS] No audio_url for chat {chat_id}. Path: {s.audio_file_path}, Exists: {s.audio_file_path.exists() if s.audio_file_path else 'N/A'}, Identifier: {s.current.identifier}")
-
 
             data[str(chat_id)] = {
                 "chat_id": chat_id,
@@ -91,7 +82,6 @@ class RadioManager:
 
     async def start(self, chat_id: int, query: str) -> None:
         await self.stop(chat_id)
-
         s = RadioSession(chat_id=chat_id, query=query.strip() or random.choice(self._settings.RADIO_GENRES))
         self._sessions[chat_id] = s
         self._tasks[chat_id] = asyncio.create_task(self._loop(s))
@@ -108,7 +98,6 @@ class RadioManager:
                     s.audio_file_path.unlink()
                 except OSError as e:
                     logger.warning("Error deleting audio file on stop: %s", e)
-
         if t:
             t.cancel()
             try:
@@ -130,17 +119,10 @@ class RadioManager:
             s.skip_event.set()
 
     async def _refill_playlist(self, s: RadioSession) -> None:
-        queries = [
-            s.query,
-            f"{s.query} music",
-            f"best {s.query} mix",
-            random.choice(self._settings.RADIO_GENRES),
-        ]
-
+        queries = [s.query, f"{s.query} music", f"best {s.query} mix", random.choice(self._settings.RADIO_GENRES)]
         for attempt, q in enumerate(queries, start=1):
             try:
                 logger.info("[Radio] search chat=%s q=%r attempt=%s", s.chat_id, q, attempt)
-                
                 tracks = await self.youtube_downloader.search(
                     q,
                     limit=self._settings.MAX_RESULTS,
@@ -150,7 +132,6 @@ class RadioManager:
                     min_likes=self._settings.RADIO_MIN_LIKES,
                     min_like_ratio=self._settings.RADIO_MIN_LIKE_RATIO
                 )
-                
                 if tracks:
                     random.shuffle(tracks)
                     for t in tracks:
@@ -163,12 +144,9 @@ class RadioManager:
                 s.last_error = "search timeout"
             except Exception as e:
                 s.last_error = f"search error: {e}"
-
             await asyncio.sleep(2 + attempt)
-
         s.fails_in_row += 1
         logger.warning("[Radio] playlist empty after attempts chat=%s fails=%s", s.chat_id, s.fails_in_row)
-
         if s.fails_in_row >= self._settings.MAX_RETRIES:
             s.query = random.choice(self._settings.RADIO_GENRES)
             s.fails_in_row = 0
@@ -181,36 +159,27 @@ class RadioManager:
                 if not s.playlist:
                     await asyncio.sleep(3)
                     continue
-            
-            # Удаляем старый файл, если он был
             if s.audio_file_path and s.audio_file_path.exists():
                 try:
                     s.audio_file_path.unlink()
                 except OSError as e:
                     logger.warning("Error deleting old audio file: %s", e)
-            
             s.audio_file_path = None
             track_info = s.playlist.popleft()
             s.current = track_info
             s.skip_event.clear()
-
             try:
                 await self.bot.send_message(s.chat_id, f"⏳ Скачиваю: `{track_info.title}`", parse_mode="Markdown")
-
                 download_result = await self.youtube_downloader.download_with_retry(track_info.identifier)
-
                 if not download_result.success:
                     s.last_error = download_result.error
                     logger.warning(f"[Radio] Skip failed track: {track_info.identifier} - {download_result.error}")
                     continue
-
                 if not download_result.file_path or not download_result.track_info:
                     s.last_error = download_result.error or "Unknown download error"
                     logger.warning("[Radio] Download result missing file_path or track_info chat=%s track=%s error=%s", s.chat_id, track_info.identifier, s.last_error)
                     continue
-
                 s.audio_file_path = Path(download_result.file_path)
-
                 with s.audio_file_path.open("rb") as f:
                     await self.bot.send_audio(
                         chat_id=s.chat_id,
@@ -218,9 +187,8 @@ class RadioManager:
                         title=download_result.track_info.title[:64],
                         caption=download_result.track_info.display_name,
                         performer=download_result.track_info.artist,
-                        duration=download_result.track_info.duration,
+                        duration=download_result.track_info.duration
                     )
-
             except asyncio.TimeoutError:
                 s.last_error = "download timeout"
                 logger.warning("[Radio] download timeout chat=%s track=%s", s.chat_id, track_info.identifier)
@@ -229,7 +197,6 @@ class RadioManager:
                 s.last_error = f"download/send error: {e}"
                 logger.exception("[Radio] error chat=%s", s.chat_id)
                 continue
-
             try:
                 done, pending = await asyncio.wait(
                     [
@@ -243,5 +210,4 @@ class RadioManager:
                     p.cancel()
             except Exception:
                 pass
-
         logger.info("Radio stopped chat=%s", s.chat_id)
