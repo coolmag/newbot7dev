@@ -109,11 +109,8 @@ class YouTubeDownloader(BaseDownloader):
                 combined_filter = " & ".join(filters)
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
-            options.update({
-                "quiet": True, # Добавлено для подавления вывода
-                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best" # Приоритет m4a/webm
-            })
-            options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")
+            options["format"] = "bestaudio[ext=m4a]/bestaudio"
+            options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "% (id)s.%(ext)s")
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)
         return options
@@ -142,177 +139,85 @@ class YouTubeDownloader(BaseDownloader):
             search_query_parts.extend(["official audio", "topic", "lyrics", "альбом"])
         smart_query = " ".join(search_query_parts)
 
-        # --- Python-based Quality Filter ---
         def is_high_quality(e: Dict[str, Any]) -> bool:
             title = e.get('title', '').lower()
             channel = e.get('channel', '').lower()
-            
             is_good_title = any(kw in title for kw in ['audio', 'lyric', 'альбом', 'album'])
             is_topic_channel = channel.endswith(' - topic')
-            is_bad_title = any(kw in title for kw in [
-                'live', 'short', 'концерт', 'выступление', 'official video', 
-                'music video', 'full show', 'interview', 'parody', 'влог', 
-                'vlog', 'топ 10', 'mix', 'сборник', 'playlist'
-            ])
-            
+            is_bad_title = any(kw in title for kw in ['live', 'short', 'концерт', 'выступление', 'official video', 'music video', 'full show', 'interview', 'parody', 'влог', 'vlog', 'топ 10', 'mix', 'сборник', 'playlist'])
             return (is_good_title or is_topic_channel) and not is_bad_title
 
         def is_valid_video_entry(e: Dict[str, Any]) -> bool:
-            """Проверяет, что ID похож на ID видео, а не канала."""
             entry_id = e.get('id')
             return entry_id and len(entry_id) == 11
 
-        # --- Попытка 1: строгий поиск ---
         logger.debug(f"[SmartSearch] Попытка 1: строгий поиск с запросом '{smart_query}'")
-        ydl_opts_strict = self._get_ydl_options(
-            is_search=True,
-            min_duration=min_duration,
-            max_duration=max_duration,
-        )
+        ydl_opts_strict = self._get_ydl_options(is_search=True, min_duration=min_duration, max_duration=max_duration)
         
         try:
             info = await self._extract_info(f"ytsearch5:{smart_query}", ydl_opts_strict)
             if info and info.get("entries"):
-                entries = info["entries"]
-                
-                # Применяем фильтры в Python
-                valid_entries = [e for e in entries if is_valid_video_entry(e)]
-                high_quality_entries = [e for e in valid_entries if is_high_quality(e)]
-
-                # Сначала ищем в музыкальной категории качественных треков
-                music_entries = [e for e in high_quality_entries if isinstance(e.get("categories"), list) and "Music" in e.get("categories", [])]
-                if music_entries:
-                    entry = music_entries[0]
-                    logger.info(f"[SmartSearch] Успех (строгий поиск, high quality, music)! Найден: {entry['title']}")
-                    return TrackInfo(
-                        title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")),
-                        duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
-
-                # Если не нашли, ищем любой качественный
-                if high_quality_entries:
-                    entry = high_quality_entries[0]
-                    logger.info(f"[SmartSearch] Успех (строгий поиск, high quality)! Найден: {entry['title']}")
-                    return TrackInfo(
-                        title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")),
-                        duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
-
+                entries = [e for e in info["entries"] if is_valid_video_entry(e) and is_high_quality(e)]
+                if entries:
+                    entry = entries[0]
+                    logger.info(f"[SmartSearch] Успех (строгий поиск)! Найден: {entry['title']}")
+                    return TrackInfo(title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")), duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
         except Exception as e:
             logger.warning(f"[SmartSearch] Ошибка на этапе строгого поиска: {e}")
 
-        # --- Попытка 2: обычный поиск ---
         logger.info("[SmartSearch] Строгий поиск не дал результатов, перехожу к обычному поиску.")
-        ydl_opts_fallback = self._get_ydl_options(
-            is_search=True,
-            min_duration=min_duration,
-            max_duration=max_duration,
-        )
+        ydl_opts_fallback = self._get_ydl_options(is_search=True, min_duration=min_duration, max_duration=max_duration)
         try:
             info = await self._extract_info(f"ytsearch1:{query}", ydl_opts_fallback)
             if info and info.get("entries"):
-                # Применяем только фильтр на валидность видео
                 valid_entries = [e for e in info["entries"] if is_valid_video_entry(e)]
-                
-                if not valid_entries:
-                    logger.warning(f"[SmartSearch] Обычный поиск по запросу '{query}' не дал валидных видео.")
-                    return None
-
-                # Ищем музыкальные треки
-                music_entries = [e for e in valid_entries if isinstance(e.get("categories"), list) and "Music" in e.get("categories", [])]
-                if music_entries:
-                    entry = music_entries[0]
-                    logger.info(f"[SmartSearch] Успех (обычный поиск, music)! Найден: {entry['title']}")
-                    return TrackInfo(
-                        title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")),
-                        duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
-
-                # Берем просто первое валидное видео
-                entry = valid_entries[0]
-                logger.info(f"[SmartSearch] Музыкальных треков не найдено (обычный поиск), беру первый результат: {entry['title']}")
-                return TrackInfo(
-                    title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")),
-                    duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
-        
+                if valid_entries:
+                    entry = valid_entries[0]
+                    logger.info(f"[SmartSearch] Успех (обычный поиск)! Найден: {entry['title']}")
+                    return TrackInfo(title=entry["title"], artist=entry.get("channel", entry.get("uploader", "Unknown")), duration=int(entry.get("duration", 0)), source=Source.YOUTUBE.value, identifier=entry["id"])
         except Exception as e:
             logger.error(f"[SmartSearch] Ошибка на этапе обычного поиска: {e}")
-            return None
         
         logger.warning(f"[SmartSearch] Поиск по запросу '{query}' не дал никаких результатов.")
         return None
 
     async def download(self, query_or_id: str) -> DownloadResult:
         is_id = re.match(r"^[a-zA-Z0-9_-]{11}$", query_or_id) is not None
+        cache_key = f"yt:{query_or_id}"
         
-        cache_key = query_or_id if is_id else f"search:{query_or_id}"
         cached = await self._cache.get(cache_key, Source.YOUTUBE)
-        if cached:
-            return cached
+        if cached: return cached
 
         try:
-            if is_id:
-                track_identifier = query_or_id
-            else:
-                track_info_for_dl = await self._find_best_match(
-                    query_or_id,
-                    min_duration=self._settings.PLAY_MIN_DURATION_S,
-                    max_duration=self._settings.PLAY_MAX_DURATION_S
-                )
-                if not track_info_for_dl:
-                    return DownloadResult(success=False, error="Ничего не найдено.")
-                track_identifier = track_info_for_dl.identifier
+            track_identifier = query_or_id if is_id else (await self._find_best_match(query_or_id, self._settings.PLAY_MIN_DURATION_S, self._settings.PLAY_MAX_DURATION_S) or {}).get("identifier")
+            if not track_identifier:
+                return DownloadResult(success=False, error="Ничего не найдено.")
 
-            ydl_opts_download = self._get_ydl_options(is_search=False)
-            ydl_opts_download["max_filesize"] = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
+            ydl_opts = self._get_ydl_options(is_search=False)
+            ydl_opts["max_filesize"] = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
 
-            try:
-                # Добавляем таймаут, чтобы не зависать на стримах
-                info = await asyncio.wait_for(
-                    self._extract_info(track_identifier, ydl_opts_download),
-                    timeout=30.0
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"Таймаут при получении информации о треке {track_identifier}. Вероятно, это стрим.")
-                return DownloadResult(success=False, error="Таймаут получения информации о видео.")
-            
-            track_info = TrackInfo(
-                title=info.get("title", "Unknown"),
-                artist=info.get("channel", info.get("uploader", "Unknown")),
-                duration=int(info.get("duration", 0)),
-                source=Source.YOUTUBE.value,
-                identifier=info["id"],
-            )
+            info = await self._extract_info(track_identifier, ydl_opts)
+            if not info: return DownloadResult(success=False, error="Не удалось получить информацию о видео.")
+
+            track_info = TrackInfo.from_yt_info(info)
 
             if track_info.duration > self._settings.PLAY_MAX_DURATION_S:
-                err_msg = f"Найденный трек слишком длинный ({track_info.format_duration()})."
-                logger.warning(err_msg)
-                return DownloadResult(success=False, error=err_msg)
+                return DownloadResult(success=False, error=f"Трек слишком длинный ({track_info.format_duration()}).")
 
-            try:
-                loop = asyncio.get_running_loop()
-                # Оборачиваем сам процесс скачивания в таймаут
-                await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: yt_dlp.YoutubeDL(ydl_opts_download).download([track_identifier]),
-                    ),
-                    timeout=self._settings.DOWNLOAD_TIMEOUT_S
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"Полный таймаут скачивания трека {track_identifier}. Процесс yt-dlp 'завис'.")
-                return DownloadResult(success=False, error="Таймаут скачивания видео (процесс занял слишком много времени).")
+            await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([track_identifier])), timeout=self._settings.DOWNLOAD_TIMEOUT_S)
+            
+            # Ищем скачанный файл с любым из ожидаемых расширений
+            for ext in ["m4a", "webm", "mp3"]:
+                f = next(iter(glob.glob(str(self._settings.DOWNLOADS_DIR / f"{track_identifier}.{ext}"))), None)
+                if f:
+                    result = DownloadResult(True, f, track_info)
+                    await self._cache.set(cache_key, Source.YOUTUBE, result)
+                    return result
+            
+            return DownloadResult(success=False, error="Файл не найден после скачивания.")
 
-            mp3_file = next(
-                iter(glob.glob(str(self._settings.DOWNLOADS_DIR / f"{track_identifier}.mp3"))),
-                None,
-            )
-            if not mp3_file:
-                return DownloadResult(success=False, error="Файл не найден после скачивания.")
-
-            result = DownloadResult(True, mp3_file, track_info)
-            await self._cache.set(cache_key, Source.YOUTUBE, result)
-            return result
         except Exception as e:
             logger.error(f"Ошибка скачивания с YouTube: {e}", exc_info=True)
-            # Проверяем, не было ли это ошибкой размера файла
             if "File is larger than max-filesize" in str(e):
                 return DownloadResult(success=False, error=f"Файл слишком большой ( > {self._settings.PLAY_MAX_FILE_SIZE_MB}MB).")
             return DownloadResult(success=False, error=str(e))
@@ -326,101 +231,33 @@ class YouTubeDownloader(BaseDownloader):
         min_views: Optional[int] = None,
         min_likes: Optional[int] = None,
         min_like_ratio: Optional[float] = None,
-        # Мягкий фильтр для радио, чтобы предпочитать муз. контент
-        match_filter: Optional[str] = None
+        match_filter: Optional[str] = None,
     ) -> List[TrackInfo]:
         search_query = f"ytsearch{limit}:{query}"
-        ydl_opts = self._get_ydl_options(
-            is_search=True, 
-            match_filter=match_filter,
-            min_duration=min_duration,
-            max_duration=max_duration,
-        )
+        ydl_opts = self._get_ydl_options(is_search=True, match_filter=match_filter, min_duration=min_duration, max_duration=max_duration)
         
         try:
             info = await self._extract_info(search_query, ydl_opts)
-            if not info:
-                logger.warning(f"[YouTube] Поиск для '{query}' не вернул информации.")
+            if not info or not info.get("entries"):
                 return []
             
-            entries = info.get("entries", []) or []
-
-            # --- Усиленная и строгая фильтрация в Python ---
-            BANNED_WORDS = [
-                'ai cover', 'suno', 'udio', 'ai version', 'karaoke', 'караоке',
-                'ии кавер', 'сгенерировано ии', 'ai generated', '24/7', 'live radio'
-            ]
-            
-            final_entries = []
-            for e in entries:
-                if not (e and e.get("title")):
-                    continue
-                
-                # Явная проверка на флаг is_live
-                if e.get('is_live') is True:
-                    logger.warning(f"Пропущен LIVE трек (по флагу is_live): {e.get('title')}")
-                    continue
-
-                # Проверка по стоп-словам в названии
-                title_lower = e.get("title", "").lower()
-                if any(banned in title_lower for banned in BANNED_WORDS):
-                    logger.warning(f"Пропущен трек по стоп-слову '{[b for b in BANNED_WORDS if b in title_lower][0]}': {e.get('title')}")
-                    continue
-                
-                final_entries.append(e)
-            
-            # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
-
-            # Сначала отфильтровываем по категории "Music"
-            music_entries = [
-                e for e in final_entries 
-                if e and isinstance(e.get("categories"), list) and "Music" in e.get("categories", [])
-            ]
-            
-            # Если после фильтрации ничего не осталось, используем оригинальный список
-            if not music_entries:
-                logger.warning(f"[YouTube Search] Не найдено треков с категорией 'Music' для запроса '{query}'. Использую все результаты.")
-                music_entries = final_entries
-
             results = []
-            for e in music_entries:
-                if e.get('is_live'):
-                    logger.warning(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' - это прямая трансляция.")
-                    continue
-
-                if not (e and e.get("id") and e.get("title")):
-                    logger.debug(f"[YouTube Search Debug] Пропущен трек (без названия или ID): {e}")
+            for e in info["entries"]:
+                if not e or not e.get("id") or not e.get("title") or len(e.get("id", "")) != 11 or e.get('is_live'):
                     continue
                 
-                raw_duration = e.get("duration")
-                duration = int(raw_duration or 0)
-                
-                logger.debug(f"[YouTube Search Debug] Трек: '{e.get('title')}' (ID: {e.get('id')}), Длительность (raw): {raw_duration}, Длительность (int): {duration}")
-
-                if min_duration and duration < min_duration:
-                    logger.debug(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' (ID: {e.get('id')}) - слишком короткий ({duration} < {min_duration}).")
-                    continue
-                if max_duration and duration > max_duration:
-                    logger.debug(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' (ID: {e.get('id')}) - слишком длинный ({duration} > {max_duration}).")
-                    continue
-
-                if min_views and (e.get("view_count") is None or e.get("view_count") < min_views):
-                    logger.debug(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' (ID: {e.get('id')}) - недостаточно просмотров ({e.get('view_count')} < {min_views}).")
-                    continue
-
-                if min_likes and (e.get("like_count") is None or e.get("like_count") < min_likes):
-                    logger.debug(f"[YouTube Search Debug] Пропущен трек '{e.get('title')}' (ID: {e.get('id')}) - недостаточно лайков ({e.get('like_count')} < {min_likes}).")
+                title_lower = e.get("title", "").lower()
+                if any(banned in title_lower for banned in ['ai cover', 'karaoke', 'караоке', '24/7', 'live radio']):
                     continue
                 
-                results.append(TrackInfo(
-                    title=e["title"],
-                    artist=e.get("uploader", "Unknown"),
-                    duration=duration,
-                    source=Source.YOUTUBE.value,
-                    identifier=e.get("id"),
-                    view_count=e.get("view_count"),
-                    like_count=e.get("like_count"),
-                ))
+                duration = int(e.get("duration") or 0)
+                if (min_duration and duration < min_duration) or \
+                   (max_duration and duration > max_duration) or \
+                   (min_views and (e.get("view_count") is None or e.get("view_count") < min_views)) or \
+                   (min_likes and (e.get("like_count") is None or e.get("like_count") < min_likes)):
+                    continue
+                
+                results.append(TrackInfo.from_yt_info(e))
             return results
         except Exception as e:
             logger.error(f"[YouTube] Ошибка поиска для '{query}': {e}", exc_info=True)
@@ -444,9 +281,14 @@ class InternetArchiveDownloader(BaseDownloader):
         return self._session
 
     async def search(
-        self, query: str, limit: int = 30, min_duration: Optional[int] = None, 
-        max_duration: Optional[int] = None, min_views: Optional[int] = None, 
-        min_likes: Optional[int] = None, min_like_ratio: Optional[float] = None
+        self,
+        query: str,
+        limit: int = 30,
+        min_duration: Optional[int] = None,
+        max_duration: Optional[int] = None,
+        min_views: Optional[int] = None,
+        min_likes: Optional[int] = None,
+        min_like_ratio: Optional[float] = None,
     ) -> List[TrackInfo]:
         params = {
             "q": f'mediatype:audio AND (subject:("{query}") OR title:("{query}"))',
