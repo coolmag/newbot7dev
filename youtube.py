@@ -115,7 +115,6 @@ class YouTubeDownloader(BaseDownloader):
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
                     "preferredquality": "192",
-                    "ffmpeg_location": "ffmpeg", # Указываем ffmpeg явно
                 }
             ]
             options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")

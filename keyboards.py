@@ -9,14 +9,12 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⭐️ Избранное", callback_data="favorites"),
-            InlineKeyboardButton("⚙️ Настройки", callback_data="settings"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_genre_keyboard() -> InlineKeyboardMarkup:
     """Возвращает клавиатуру выбора жанра."""
-    # В будущем здесь будет динамическая генерация из настроек
     keyboard = [
         [
             InlineKeyboardButton("🤘 Rock", callback_data="genre_rock"),
@@ -24,7 +22,25 @@ def get_genre_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🎹 Electronic", callback_data="genre_electronic"),
         ],
         [
+            InlineKeyboardButton("🎧 Hip-Hop", callback_data="genre_hip-hop"),
+            InlineKeyboardButton("🎷 Jazz", callback_data="genre_jazz"),
+            InlineKeyboardButton("🧘 Lo-Fi", callback_data="genre_lofi"),
+        ],
+        [
             InlineKeyboardButton("⬅️ Назад", callback_data="main_menu"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def get_status_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для сообщения о статусе."""
+    webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
+    keyboard = [
+        [
+            InlineKeyboardButton("⏭️", callback_data="skip_track"),
+            InlineKeyboardButton("⏹️", callback_data="stop_radio"),
+            InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url)),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
