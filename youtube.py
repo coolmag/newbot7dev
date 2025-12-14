@@ -110,18 +110,21 @@ class YouTubeDownloader(BaseDownloader):
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
             options.update({
-                "format": "bestaudio[ext=m4a]/bestaudio/best[height<=480]/best[ext=mp4]/best", # FLEXIBLE: Prefer audio, fallback video
-                "format_sort": ['ext:mp3:m4a:webm:ogg:flac:vorbis', 'size<10M', 'br<192'],  # Prefer small/high-quality audio
-                "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                "noplaylist": True,
-                "quiet": True,
-                "no_warnings": True,
-                "extract_flat": False,
-                "postprocessors": [{  # Auto-convert to mp3/ogg Telegram-friendly
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
+                'format': 'bestaudio[ext=m4a]/bestaudio/best[filesize<20M]/bestaudio/best[height<=480]/best[ext=mp4]/best',
+                'format_sort': ['ext:mp3>m4a>webm>opus>mp4', 'br:192', 'size+'],
+                'outtmpl': str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                    'keepvideo': False,
                 }],
+                'retries': 10,
+                'fragment_retries': 10,
             })
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)
