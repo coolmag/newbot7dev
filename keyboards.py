@@ -39,7 +39,9 @@ def get_status_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKe
         [
             InlineKeyboardButton("⏭️", callback_data="skip_track"),
             InlineKeyboardButton("⏹️", callback_data="stop_radio"),
-            player_button,
+        ],
+        [
+            player_button
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

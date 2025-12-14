@@ -89,9 +89,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-class ChatIdPayload(BaseModel):
-    chat_id: str = Field(..., min_length=5, max_length=20) # chat_id из телеграма может быть длинным
-
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
 @app.get("/health")
@@ -99,7 +96,7 @@ async def health():
     return {"ok": True}
 
 @app.get("/api/radio/status")
-async def radio_status(chat_id: str | None = None): # Изменено с int на str
+async def radio_status(chat_id: str | None = None):
     radio: RadioManager = app.state.radio
     full_status = radio.status()
     if chat_id:
@@ -111,18 +108,28 @@ async def radio_status(chat_id: str | None = None): # Изменено с int н
     return JSONResponse(full_status)
 
 @app.post("/api/radio/skip")
-async def radio_skip(payload: ChatIdPayload):
-    logger.info(f"API: Received skip request for chat_id: {payload.chat_id}")
+async def radio_skip(req: Request):
+    data = await req.json()
+    chat_id = data.get("chat_id")
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id is required")
+        
+    logger.info(f"API: Received skip request for chat_id: {chat_id}")
     radio: RadioManager = app.state.radio
-    await radio.skip(int(payload.chat_id)) # Преобразуем обратно в int
+    await radio.skip(int(chat_id))
     return {"ok": True}
 
 @app.post("/api/radio/stop")
-async def radio_stop(payload: ChatIdPayload):
-    logger.info(f"API: Received stop request for chat_id: {payload.chat_id}")
+async def radio_stop(req: Request):
+    data = await req.json()
+    chat_id = data.get("chat_id")
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id is required")
+
+    logger.info(f"API: Received stop request for chat_id: {chat_id}")
     radio: RadioManager = app.state.radio
-    await radio.stop(int(payload.chat_id)) # Преобразуем обратно в int
-    return {"ok": True, "message": f"Radio stopped for chat_id {payload.chat_id}"}
+    await radio.stop(int(chat_id))
+    return {"ok": True, "message": f"Radio stopped for chat_id {chat_id}"}
 
 @app.post("/telegram")
 async def telegram_webhook(req: Request):
