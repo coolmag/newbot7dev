@@ -95,10 +95,15 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         if not s:
             await update.effective_message.reply_text("Радио не запущено.")
             return
+        current_track_info = "нет"
+        if s.get("current"):
+            current = s["current"]
+            current_track_info = f"{current.get('title', 'N/A')} - {current.get('artist', 'N/A')}"
+
         await update.effective_message.reply_text(
             "📻 Статус:\n"
             f"- query: {s['query']}\n"
-            f"- current: {s['current']}\n"
+            f"- current: {current_track_info}\n"
             f"- playlist: {s['playlist_len']}\n"
             f"- last_error: {s['last_error']}\n"
         )
