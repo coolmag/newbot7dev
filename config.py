@@ -59,19 +59,72 @@ class Settings(BaseSettings):
     MAX_RESULTS: int = 20  # ✅ ДОБАВЛЕНО
     
     RADIO_GENRES: List[str] = [
-        "rock", "classic rock", "indie rock", "alternative rock",
-        "pop", "disco", "r&b", "synth-pop",
-        "soul", "funk", "jazz", "blues",
-        "electronic", "house", "techno", "ambient",
-        "hip-hop", "rap",
-        "classical", "soundtrack",
+        # --- Рок ---
+        "rock", "classic rock", "psychedelic rock", "indie rock", "alternative rock", "hard rock", 
+        "post-punk", "metal", "industrial", "gothic rock", "punk rock", "progressive rock",
+        "pop rock", "grunge", "britpop", "emo",
+        "rock and roll",
+
+        # --- Поп и танцевальная ---
+        "pop", "new wave", "disco", "r&b", "traditional pop", "synth-pop", "latin pop", "k-pop",
+        
+        # --- Соул, Фанк, Грув ---
+        "soul", "funk", "soul groove", "jazz-funk", "rare groove", "modern soul", "neo-soul",
+        
+        # --- Джаз и Блюз ---
+        "jazz", "blues", "doo-wop",
+
+        # --- Электроника (общая) ---
+        "electronic", "ambient", "chillwave", "lofi hip-hop", "downtempo", "edm (electronic dance music)",
+        "trap", "hyperpop", "synthwave",
+
+        # --- Танцевальная электроника (House, Techno и др.) ---
+        "house", "deep house", "deep tech house", "progressive house", "tech house", "chill house", "tropical house",
+        "techno", "minimal techno", "trance", "drum and bass", "dubstep", "uk garage", 
+        "breakbeat", "hardstyle", "phonk", "future bass", "ambient house", "trip-hop",
+
+        # --- DJ-сеты и ремиксы ---
+        "extended mix", "club mix", "dj set",
+        "hardwell", "armin van buuren", "tiesto", "david guetta", "daft punk",
+        
+        # --- Хип-хоп / Рэп ---
+        "hip-hop", "rap", "drill",
+        
+        # --- Классика, фолк и этника ---
+        "classical", "orchestral", "soundtrack", "folk", "country", "reggae", "latin", "world music", "afrobeats", "reggaeton", "ska",
+
+        # --- Русскоязычные (поп и рок) ---
+        "русская поп-музыка", "русский рок", "русский панк-рок", "русский пост-панк",
+
+        # --- Русскоязычные (хип-хоп) ---
+        "русский рэп", "русский хип-хоп", "кальянный рэп",
+
+        # --- Советская эстрада, джаз, грув ---
+        "советский грув", "советский фанк", "советский джаз", "советская эстрада",
+
+        # --- Русскоязычные (авторское и шансон) ---
+        "шансон", "бардовская песня", "авторская песня", "русские романсы",
+        
+        # --- Дополнительные ---
+        "bedroom pop"
     ]
 
     RADIO_MOODS: Dict[str, List[str]] = {
-        "чилл": ["lofi hip-hop", "chillwave", "downtempo", "ambient"],
-        "энергия": ["pop", "house", "edm", "rock"],
-        "грусть": ["blues", "indie rock", "alternative rock"],
-        "драйв": ["hard rock", "metal", "techno", "trance"],
+        # Новые "зумерские" настроения
+        "чилл": ["lofi hip-hop", "chillwave", "downtempo", "ambient", "trip-hop", "bedroom pop"],
+        "вайб": ["soul", "r&b", "neo-soul", "jazz-funk", "deep house", "bedroom pop"],
+        "движ": ["hip-hop", "drill", "phonk", "trap", "hardstyle", "drum and bass", "k-pop"],
+        "грув": ["funk", "disco", "soul groove", "rare groove", "jazz-funk"],
+        
+        # Обновленные старые
+        "энергия": ["pop", "house", "edm", "progressive house", "hard rock", "эстрада 80-90х"],
+        "грусть": ["blues", "indie rock", "alternative rock", "emo", "post-punk", "русские романсы"],
+        "фокус": ["ambient", "minimal techno", "lofi hip-hop", "soundtrack"],
+        "драйв": ["hard rock", "metal", "phonk", "techno", "trance", "punk rock"],
+        "ностальгия": ["synthwave", "retrowave", "classic rock", "советская эстрада", "new wave"],
+        
+        # Специальные
+        "русское": ["русская поп-музыка", "русский рок", "русский рэп", "кальянный рэп", "советский джаз", "советская эстрада"]
     }
 
     # --- Настройки кэша ---
