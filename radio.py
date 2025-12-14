@@ -43,6 +43,18 @@ class RadioManager:
         self._sessions: Dict[int, RadioSession] = {}
         self._tasks: Dict[int, asyncio.Task[None]] = {}
 
+    def _parse_error(self, error: Exception) -> str:
+        msg = str(error).lower()
+        if "private" in msg:
+            return "Видео приватное"
+        elif "unavailable" in msg:
+            return "Видео недоступно"
+        elif "age" in msg:
+            return "Требуется возраст 18+"
+        elif "copyright" in msg:
+            return "Заблокировано по авторским правам"
+        return str(error)[:100]
+
     def status(self) -> dict:
         data = {}
         for chat_id, s in self._sessions.items():
@@ -141,9 +153,9 @@ class RadioManager:
                     logger.info("[Radio] added=%s total=%s chat=%s", len(tracks), len(s.playlist), s.chat_id)
                     return
             except asyncio.TimeoutError:
-                s.last_error = "search timeout"
+                s.last_error = self._parse_error(asyncio.TimeoutError("search timeout"))
             except Exception as e:
-                s.last_error = f"search error: {e}"
+                s.last_error = self._parse_error(e)
             await asyncio.sleep(2 + attempt)
         s.fails_in_row += 1
         logger.warning("[Radio] playlist empty after attempts chat=%s fails=%s", s.chat_id, s.fails_in_row)
@@ -153,33 +165,48 @@ class RadioManager:
             logger.warning("[Radio] auto-change genre chat=%s new_query=%r", s.chat_id, s.query)
 
     async def _loop(self, s: RadioSession) -> None:
+        logger.info(f"[{s.chat_id}] Starting radio loop. Playlist size: {len(s.playlist)}")
         while not s.stop_event.is_set():
             if not s.playlist:
+                logger.info(f"[{s.chat_id}] Playlist empty. Refilling...")
                 await self._refill_playlist(s)
                 if not s.playlist:
+                    logger.warning(f"[{s.chat_id}] Playlist still empty after refill. Waiting...")
                     await asyncio.sleep(3)
                     continue
+            
             if s.audio_file_path and s.audio_file_path.exists():
                 try:
                     s.audio_file_path.unlink()
+                    logger.debug(f"[{s.chat_id}] Deleted old audio file: {s.audio_file_path}")
                 except OSError as e:
-                    logger.warning("Error deleting old audio file: %s", e)
+                    logger.warning(f"[{s.chat_id}] Error deleting old audio file: {e}")
+            
             s.audio_file_path = None
             track_info = s.playlist.popleft()
             s.current = track_info
             s.skip_event.clear()
+            
+            logger.info(f"[{s.chat_id}] Took track from playlist: '{track_info.title}'. Remaining playlist size: {len(s.playlist)}")
+
             try:
                 await self.bot.send_message(s.chat_id, f"⏳ Скачиваю: `{track_info.title}`", parse_mode="Markdown")
+
                 download_result = await self.youtube_downloader.download_with_retry(track_info.identifier)
+
                 if not download_result.success:
-                    s.last_error = download_result.error
-                    logger.warning(f"[Radio] Skip failed track: {track_info.identifier} - {download_result.error}")
+                    s.last_error = self._parse_error(Exception(download_result.error)) # Используем parse_error для результата загрузки
+                    logger.warning(f"[{s.chat_id}] Skip failed track: {track_info.identifier} - {s.last_error}")
                     continue
+
                 if not download_result.file_path or not download_result.track_info:
-                    s.last_error = download_result.error or "Unknown download error"
-                    logger.warning("[Radio] Download result missing file_path or track_info chat=%s track=%s error=%s", s.chat_id, track_info.identifier, s.last_error)
+                    s.last_error = self._parse_error(Exception(download_result.error or "Unknown download error"))
+                    logger.warning(f"[{s.chat_id}] Download result missing file_path or track_info: {track_info.identifier}, error: {s.last_error}")
                     continue
+
                 s.audio_file_path = Path(download_result.file_path)
+                logger.info(f"[{s.chat_id}] Track downloaded to: {s.audio_file_path}")
+
                 with s.audio_file_path.open("rb") as f:
                     await self.bot.send_audio(
                         chat_id=s.chat_id,
@@ -189,15 +216,20 @@ class RadioManager:
                         performer=download_result.track_info.artist,
                         duration=download_result.track_info.duration
                     )
+                
+                logger.info(f"[{s.chat_id}] Successfully sent track: '{track_info.title}'")
+
             except asyncio.TimeoutError:
-                s.last_error = "download timeout"
-                logger.warning("[Radio] download timeout chat=%s track=%s", s.chat_id, track_info.identifier)
+                s.last_error = self._parse_error(asyncio.TimeoutError("download timeout"))
+                logger.warning(f"[{s.chat_id}] Download timeout for track: {track_info.identifier}")
                 continue
             except Exception as e:
-                s.last_error = f"download/send error: {e}"
-                logger.exception("[Radio] error chat=%s", s.chat_id)
+                s.last_error = self._parse_error(e)
+                logger.exception(f"[{s.chat_id}] Unhandled error in loop for track: {track_info.identifier}")
                 continue
+
             try:
+                logger.debug(f"[{s.chat_id}] Waiting for cooldown, skip, or stop...")
                 done, pending = await asyncio.wait(
                     [
                         asyncio.create_task(asyncio.sleep(self._settings.RADIO_COOLDOWN_S)),
@@ -208,6 +240,10 @@ class RadioManager:
                 )
                 for p in pending:
                     p.cancel()
-            except Exception:
+                logger.debug(f"[{s.chat_id}] Wait finished. Reason: {[d.get_name() for d in done]}")
+
+            except Exception as e:
+                logger.error(f"[{s.chat_id}] Error in wait block: {e}")
                 pass
-        logger.info("Radio stopped chat=%s", s.chat_id)
+
+        logger.info(f"[{s.chat_id}] Radio loop finished.")

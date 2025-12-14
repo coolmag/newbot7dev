@@ -109,7 +109,10 @@ class YouTubeDownloader(BaseDownloader):
                 combined_filter = " & ".join(filters)
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
-            options["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best" # Приоритет m4a/webm
+            options.update({
+                "quiet": True, # Добавлено для подавления вывода
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best" # Приоритет m4a/webm
+            })
             options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)
