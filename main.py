@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     radio = RadioManager(
         bot=tg_app.bot,
         settings=settings,
-        youtube_downloader=youtube_downloader,
+        downloader=youtube_downloader,
     )
 
     setup_handlers(tg_app, radio, settings)
