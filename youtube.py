@@ -117,12 +117,7 @@ class YouTubeDownloader(BaseDownloader):
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                    'keepvideo': False,
-                }],
+                # 'postprocessors': [], # Удалено полностью
                 'retries': 10,
                 'fragment_retries': 10,
             })
