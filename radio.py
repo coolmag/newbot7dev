@@ -51,6 +51,8 @@ class RadioManager:
 
     def _parse_error(self, error: Exception) -> str:
         msg = str(error).lower()
+        if "requested format is not available" in msg:
+            return "Нет подходящего формата (видео без отдельной аудио-дорожки)"
         if "private" in msg: return "Видео приватное"
         if "unavailable" in msg: return "Видео недоступно"
         if "age" in msg: return "Требуется возраст 18+"
@@ -74,9 +76,16 @@ class RadioManager:
                     audio_url = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
                     current_track_info["audio_url"] = audio_url
                     
-                    mime_type, _ = mimetypes.guess_type(str(s.audio_file_path))
-                    current_track_info["audio_mime"] = mime_type or "application/octet-stream"
-
+                    ext = s.audio_file_path.suffix.lower()
+                    if ext in (".mp4", ".m4a"):
+                        current_track_info["audio_mime"] = "audio/mp4"
+                    elif ext == ".mp3":
+                        current_track_info["audio_mime"] = "audio/mpeg"
+                    elif ext in (".webm", ".opus", ".ogg"):
+                        current_track_info["audio_mime"] = "audio/webm"
+                    else:
+                        mime_type, _ = mimetypes.guess_type(str(s.audio_file_path))
+                        current_track_info["audio_mime"] = mime_type or "application/octet-stream"
 
             data[str(chat_id)] = {
                 "chat_id": chat_id,
@@ -96,7 +105,7 @@ class RadioManager:
             }
         return {"sessions": data}
 
-    async def start(self, chat_id: int, query: str, chat_type: str):
+    async def start(self, chat_id: int, query: str, chat_type: str = "private"):
         await self.stop(chat_id)
         session = RadioSession(chat_id=chat_id, query=query.strip() or random.choice(self._settings.RADIO_GENRES), chat_type=chat_type)
         self._sessions[chat_id] = session
