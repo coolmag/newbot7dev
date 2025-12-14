@@ -18,6 +18,7 @@ from telegram.error import TelegramError
 from config import Settings
 from models import DownloadResult, TrackInfo
 from youtube import YouTubeDownloader
+from keyboards import get_status_keyboard
 
 logger = logging.getLogger("radio")
 
@@ -25,6 +26,7 @@ logger = logging.getLogger("radio")
 class RadioSession:
     chat_id: int
     query: str
+    chat_type: str # Добавлено для клавиатуры
     started_at: float = field(default_factory=lambda: time.time())
     current: Optional[TrackInfo] = None
     playlist: Deque[TrackInfo] = field(default_factory=deque)
@@ -82,9 +84,9 @@ class RadioManager:
             }
         return {"sessions": data}
 
-    async def start(self, chat_id: int, query: str):
+    async def start(self, chat_id: int, query: str, chat_type: str):
         await self.stop(chat_id)
-        session = RadioSession(chat_id=chat_id, query=query.strip() or random.choice(self._settings.RADIO_GENRES))
+        session = RadioSession(chat_id=chat_id, query=query.strip() or random.choice(self._settings.RADIO_GENRES), chat_type=chat_type)
         self._sessions[chat_id] = session
         self._tasks[chat_id] = asyncio.create_task(self._radio_loop(session))
         logger.info(f"[{chat_id}] Radio task created for query: '{query}'")
@@ -169,9 +171,13 @@ class RadioManager:
                 try:
                     with s.audio_file_path.open("rb") as f:
                         await self._bot.send_audio(
-                            chat_id=s.chat_id, audio=f, title=result.track_info.title,
-                            performer=result.track_info.artist, duration=result.track_info.duration,
-                            caption=f"📻 {s.query}"
+                            chat_id=s.chat_id,
+                            audio=f,
+                            title=result.track_info.title,
+                            performer=result.track_info.artist,
+                            duration=result.track_info.duration,
+                            caption=f"📻 {s.query}",
+                            reply_markup=get_status_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
                         )
                     await download_msg.delete()
                 except TelegramError as e:

@@ -111,19 +111,23 @@ class YouTubeDownloader(BaseDownloader):
         else:
             options.update({
                 'format': 'bestaudio[ext=m4a]/bestaudio/best[filesize<20M]/bestaudio/best[height<=480]/best[ext=mp4]/best',
-                'format_sort': ['ext:mp3>m4a>webm>opus>mp4', 'br:192'], # Убран 'size+'
+                'format_sort': ['ext:mp3>m4a>webm>opus>mp4', 'br:192'],
                 'outtmpl': str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
-                'extract_flat': False, # Установлено в False для загрузки
-                'postprocessors': [{  # Корректная секция postprocessors
+                'noprogress': True, # Добавлено, чтобы убрать спам
+                'extract_flat': False,
+                'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
                 'retries': 10,
                 'fragment_retries': 10,
+                "skip_unavailable_fragments": True, # Добавлено для стабильности
+                "continuedl": True, # Добавлено для стабильности
+                "concurrent_fragment_downloads": 1, # Добавлено для стабильности
             })
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)

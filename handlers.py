@@ -130,7 +130,7 @@ _{current.get('artist', 'N/A')}_
         chat = update.effective_chat
         query = " ".join(context.args).strip() if context.args else "rock hits"
         
-        await radio.start(chat.id, query)
+        await radio.start(chat.id, query, chat.type)
         await update.effective_message.reply_text(
             f"✅ Радио запущено: {query}",
             reply_markup=get_player_markup(chat.type, chat.id)
@@ -191,7 +191,7 @@ _{current.get('artist', 'N/A')}_
             
             case _ if data.startswith("genre_"):
                 genre = data.removeprefix("genre_")
-                await radio.start(chat_id, genre)
+                await radio.start(chat_id, genre, chat_type)
                 await query.edit_message_text(
                     text=f"✅ Радио запущено: {genre}",
                     reply_markup=get_player_markup(chat_type, chat_id)

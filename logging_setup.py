@@ -8,3 +8,6 @@ def setup_logging() -> None:
         stream=sys.stdout,
         format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s",
     )
+    # Скрываем подробные логи httpx и httpcore, чтобы не печатать токен
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
