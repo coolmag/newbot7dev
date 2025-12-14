@@ -110,20 +110,18 @@ class YouTubeDownloader(BaseDownloader):
                 options["match_filter"] = yt_dlp.utils.match_filter_func(combined_filter)
         else:
             options.update({
-                'format': 'bestaudio[ext=m4a]/bestaudio', # Приоритет m4a
-                'outtmpl': str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                'noplaylist': True,
+                "format": "bestaudio/best",
+                "format_sort": ["ext:m4a:webm", "abr", "size+"],
+                "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
+                "noplaylist": True,
                 'quiet': True,
                 'no_warnings': True,
                 'noprogress': True,
                 'extract_flat': False,
-                # 'postprocessors': [], # Удалено полностью
-                # 'format_sort': [], # Удалено полностью
                 'retries': 10,
                 'fragment_retries': 10,
                 "skip_unavailable_fragments": True,
                 "continuedl": True,
-                "concurrent_fragment_downloads": 1,
             })
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
                 options["cookiefile"] = str(self._settings.COOKIES_FILE)
@@ -206,30 +204,38 @@ class YouTubeDownloader(BaseDownloader):
             if is_id:
                 track_identifier = query_or_id
             else:
-                best = await self._find_best_match(
-                    query_or_id,
-                    min_duration=self._settings.PLAY_MIN_DURATION_S,
-                    max_duration=self._settings.PLAY_MAX_DURATION_S
-                )
+                best = await self._find_best_match(query_or_id, self._settings.PLAY_MIN_DURATION_S, self._settings.PLAY_MAX_DURATION_S)
                 track_identifier = best.identifier if best else None
 
             if not track_identifier:
                 return DownloadResult(success=False, error="Ничего не найдено.")
+            
+            video_url = f"https://www.youtube.com/watch?v={track_identifier}"
 
-            ydl_opts = self._get_ydl_options(is_search=False)
-            ydl_opts["max_filesize"] = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
-
-            info = await self._extract_info(track_identifier, ydl_opts)
+            # 1. Получаем метаданные без format/format_sort
+            ydl_opts_info = self._get_ydl_options(is_search=False)
+            ydl_opts_info.pop("format", None)
+            ydl_opts_info.pop("format_sort", None)
+            info = await self._extract_info(video_url, ydl_opts_info)
             if not info: return DownloadResult(success=False, error="Не удалось получить информацию о видео.")
 
-            track_info = TrackInfo.from_yt_info(info)
+            track_info = TrackInfo(
+                title=info.get("title", "Unknown"),
+                artist=info.get("channel", info.get("uploader", "Unknown")),
+                duration=int(info.get("duration", 0)),
+                source=Source.YOUTUBE.value,
+                identifier=info["id"],
+            )
+
+            # 2. Скачиваем с полными опциями
+            ydl_opts_download = self._get_ydl_options(is_search=False)
+            ydl_opts_download["max_filesize"] = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
 
             if track_info.duration > self._settings.PLAY_MAX_DURATION_S:
                 return DownloadResult(success=False, error=f"Трек слишком длинный ({track_info.format_duration()}).")
 
-            await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([track_identifier])), timeout=self._settings.DOWNLOAD_TIMEOUT_S)
+            await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts_download).download([video_url])), timeout=self._settings.DOWNLOAD_TIMEOUT_S)
             
-            # Ищем скачанный файл с любым из ожидаемых расширений
             for ext in ["m4a", "webm", "mp3"]:
                 f = next(iter(glob.glob(str(self._settings.DOWNLOADS_DIR / f"{track_identifier}.{ext}"))), None)
                 if f:
