@@ -24,6 +24,7 @@ class YouTubeDownloader:
     def __init__(self, settings: Settings, cache_service: CacheService):
         self._settings = settings
         self._cache = cache_service
+        # Ограничиваем количество одновременных загрузок
         self.semaphore = asyncio.Semaphore(3)
 
     def _base_opts(self) -> Dict[str, Any]:
@@ -33,7 +34,8 @@ class YouTubeDownloader:
             "noplaylist": True,
             "socket_timeout": 30,
             "source_address": "0.0.0.0",
-            "user_agent": "Mozilla/5.0",
+            # Используем обобщенный User-Agent во избежание блокировок
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "no_check_certificate": True,
             "prefer_insecure": True,
             "noprogress": True,
@@ -42,14 +44,15 @@ class YouTubeDownloader:
             "skip_unavailable_fragments": True,
             "continuedl": True,
             "overwrites": True,
+            # Важно для VEVO видео (как AC/DC)
+            "geo_bypass": True, 
         }
         if getattr(self._settings, "COOKIES_FILE", None) and self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
             opts["cookiefile"] = str(self._settings.COOKIES_FILE)
         return opts
 
-    def _search_opts(self, min_duration: int | None = None, max_duration: int | None = None) -> Dict[str, Any]:
+    def _search_opts(self) -> Dict[str, Any]:
         opts = self._base_opts()
-        # Для поиска можно оставить плоский режим, но duration иногда бывает 0 — это ок
         opts["extract_flat"] = True
         return opts
 
@@ -62,7 +65,7 @@ class YouTubeDownloader:
         opts.update(
             {
                 "format": fmt,
-                "outtmpl": str(self._settings.DOWNLOADS_DIR / "% (id)s.%(ext)s"),
+                "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "max_filesize": self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024,
             }
         )
@@ -90,7 +93,7 @@ class YouTubeDownloader:
         max_duration: Optional[int] = None,
         **kwargs,
     ) -> List[TrackInfo]:
-        # min/max duration здесь можно фильтровать уже “вручную”, т.к. extract_flat не всегда даёт duration
+        # Объединенная и исправленная функция поиска
         info = await self._extract_info(f"ytsearch{limit}:{query}", self._search_opts(), process=True)
         entries = (info or {}).get("entries") or []
 
@@ -102,6 +105,8 @@ class YouTubeDownloader:
                 continue
 
             duration = int(e.get("duration") or 0)
+            
+            # Фильтрация
             if min_duration is not None and duration and duration < min_duration:
                 continue
             if max_duration is not None and duration and duration > max_duration:
@@ -120,11 +125,13 @@ class YouTubeDownloader:
 
     def _pick_downloaded_file(self, video_id: str) -> Optional[str]:
         files = glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.*"))
+        # Исключаем временные файлы yt-dlp
         files = [f for f in files if not f.endswith((".part", ".ytdl", ".json", ".webp", ".jpg", ".png"))]
         if not files:
             return None
 
-        pref = [".m4a", ".mp3", ".mp4", ".webm", ".opus", ".ogg"]
+        # Приоритет форматов
+        pref = [".m4a", ".mp3", ".opus", ".ogg", ".mp4", ".webm"]
         files_sorted = sorted(
             files,
             key=lambda p: pref.index(Path(p).suffix.lower()) if Path(p).suffix.lower() in pref else 999,
@@ -139,29 +146,15 @@ class YouTubeDownloader:
             return False
 
     def _convert_to_mp3(self, input_path: str, video_id: str) -> Optional[str]:
-        """
-        Конвертация в mp3 для максимальной совместимости WebApp.
-        Требует ffmpeg в контейнере.
-        """
         out_path = str(self._settings.DOWNLOADS_DIR / f"{video_id}.mp3")
-
         try:
             subprocess.run(
                 [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    input_path,
-                    "-vn",
-                    "-ac",
-                    "2",
-                    "-b:a",
-                    "192k",
+                    "ffmpeg", "-y", "-i", input_path,
+                    "-vn", "-ac", "2", "-b:a", "192k",
                     out_path,
                 ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
             )
             return out_path
         except Exception:
@@ -177,7 +170,7 @@ class YouTubeDownloader:
                 if result and result.success:
                     return result
 
-                # Не ретраим “формат не найден” (бесполезно)
+                # Не ретраим заведомо бесполезное
                 if result and result.error and "Requested format is not available" in (result.error or ""):
                     return result
 
@@ -207,7 +200,11 @@ class YouTubeDownloader:
             cache_key = f"yt:{video_id}"
             cached = await self._cache.get(cache_key, Source.YOUTUBE)
             if cached:
-                return cached
+                # Проверяем, существует ли файл физически
+                if Path(cached.file_path).exists():
+                    return cached
+                else:
+                    await self._cache.delete(cache_key)
 
             video_url = f"https://www.youtube.com/watch?v={video_id}"
 
@@ -252,7 +249,7 @@ class YouTubeDownloader:
                         timeout=self._settings.DOWNLOAD_TIMEOUT_S,
                     )
                     download_successful = True
-                    break
+                    break # Успех, выходим из цикла перебора форматов
                 except (DownloadError, ExtractorError) as e:
                     last_err = e
                     if "Requested format is not available" in str(e):
@@ -265,23 +262,22 @@ class YouTubeDownloader:
             # 3) Находим реальный файл
             path = self._pick_downloaded_file(video_id)
             if not path:
-                return DownloadResult(success=False, error="Файл не найден после скачивания.")
+                return DownloadResult(success=False, error="Файл скачан, но не найден на диске.")
 
             # Опционально: принудительно делать mp3 (максимальная совместимость WebApp)
             if getattr(self._settings, "FORCE_MP3_FOR_WEBAPP", False):
                 if self._ffmpeg_available():
                     mp3 = self._convert_to_mp3(path, video_id)
                     if mp3:
-                        # Удаляем исходный файл после конвертации
                         try:
-                            Path(path).unlink()
-                        except OSError as e:
-                            logger.warning(f"Error deleting original file after MP3 conversion: {e}")
+                            if path != mp3: Path(path).unlink()
+                        except OSError:
+                            pass
                         path = mp3
                     else:
                         logger.warning(f"Failed to convert {path} to MP3. Serving original.")
                 else:
-                    logger.warning("FORCE_MP3_FOR_WEBAPP включен, но ffmpeg не найден в контейнере. Пропуск конвертации.")
+                    logger.warning("FORCE_MP3_FOR_WEBAPP включен, но ffmpeg не найден в контейнере. Пропуск.")
 
 
             result = DownloadResult(True, path, track_info)
@@ -302,41 +298,3 @@ class YouTubeDownloader:
         except Exception as e:
             logger.error("Unknown YouTube error: %s", e, exc_info=True)
             return DownloadResult(success=False, error=str(e))
-
-    async def search(self, query: str, **kwargs) -> List[TrackInfo]:
-        limit = int(kwargs.get("limit", 30))
-        opts = self._search_opts()
-        # Добавляем фильтры по длительности для поиска, если они переданы
-        min_duration = kwargs.get("min_duration")
-        max_duration = kwargs.get("max_duration")
-        if min_duration is not None or max_duration is not None:
-            expr = []
-            if min_duration is not None:
-                expr.append(f"duration >= {min_duration}")
-            if max_duration is not None:
-                expr.append(f"duration <= {max_duration}")
-            opts["match_filter"] = yt_dlp.utils.match_filter_func(" & ".join(expr))
-
-
-        try:
-            info = await self._extract_info(f"ytsearch{limit}:{query}", opts, download=False, process=True)
-            entries = (info or {}).get("entries") or []
-            out: List[TrackInfo] = []
-            for e in entries:
-                if e and e.get("id"):
-                    # Применяем фильтры по длительности после получения инфо
-                    duration = int(e.get("duration") or 0)
-                    if (min_duration is not None and duration < min_duration) or \
-                       (max_duration is not None and duration > max_duration):
-                        continue
-                    out.append(TrackInfo(
-                        title=e.get("title", "Unknown"),
-                        artist=e.get("channel") or e.get("uploader") or "Unknown",
-                        duration=int(e.get("duration") or 0),
-                        source=Source.YOUTUBE.value,
-                        identifier=e["id"],
-                    ))
-            return out
-        except Exception:
-            logger.error("[YouTube] search failed", exc_info=True)
-            return []
