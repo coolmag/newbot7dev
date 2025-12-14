@@ -264,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (session && session.current && session.current.audio_url) {
                 // Сравниваем только URL, чтобы не было лишних обновлений
-                const currentAudioSrc = audioPlayer.querySelector('source') ? audioPlayer.querySelector('source').src : audioPlayer.src;
+                const currentAudioSrc = audioPlayer.querySelector('source') ? audioPlayer.querySelector('source').src : '';
                 if (currentAudioSrc !== session.current.audio_url) {
                     console.log("New track detected. Updating src:", session.current.audio_url);
                     setAudioSource(session.current.audio_url, session.current.audio_mime);
