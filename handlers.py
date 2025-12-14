@@ -73,17 +73,12 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
         current = session.get("current")
         if current:
-            text = (
-                f"🎶 *Сейчас в эфире:*
-"
-                f"*{current.get('title', 'N/A')}*
-"
-                f"_{current.get('artist', 'N/A')}_"
+            text = f"""🎶 *Сейчас в эфире:*
+*{current.get('title', 'N/A')}*
+_{current.get('artist', 'N/A')}_
 
-                f"🎧 *Запрос:* `{session['query']}`
-"
-                f"⌛ *В очереди:* `{session['playlist_len']}` треков"
-            )
+🎧 *Запрос:* `{session['query']}`
+⌛ *В очереди:* `{session['playlist_len']}` треков"""
             await reply_func(
                 text,
                 parse_mode="Markdown",
@@ -102,11 +97,9 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
         await update.effective_message.reply_text(
-            "Привет! Я твой музыкальный бот.
+            f"""Привет! Я твой музыкальный бот.
 
-"
-            "Используй /menu, чтобы открыть главное меню, "
-            "или /radio <запрос>, чтобы сразу запустить радио.",
+Используй /menu, чтобы открыть главное меню, или /radio <запрос>, чтобы сразу запустить радио.""",
             reply_markup=get_player_markup(chat.type, chat.id)
         )
 
