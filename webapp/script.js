@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateUI();
         tick();
-        setInterval(tick, 3000);
+        setInterval(tick, 5000);
 
         const bars = visualizer.querySelectorAll('.bar');
         bars.forEach((bar, index) => {
