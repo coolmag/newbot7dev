@@ -61,9 +61,10 @@ class RadioManager:
                     "duration": s.current.duration,
                     "source": s.current.source,
                     "identifier": s.current.identifier,
-                    # web_page_url и cover_url отсутствуют в TrackInfo, но можно их добавить, если нужно.
-                    # Пока оставляем только то, что есть в TrackInfo
                 }
+                if s.audio_file_path and s.audio_file_path.exists() and s.current.identifier:
+                    current_track_info["audio_url"] = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
+
 
             data[str(chat_id)] = {
                 "chat_id": chat_id,
@@ -74,7 +75,7 @@ class RadioManager:
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
             }
-        logger.debug("Radio status for chat %s: %s", chat_id, data[str(chat_id)])
+        logger.debug("Radio status for chat %s: %s", chat_id, data.get(str(chat_id), {}))
         return {"sessions": data}
 
     async def start(self, chat_id: int, query: str) -> None:
@@ -91,6 +92,12 @@ class RadioManager:
         if s:
             s.stop_event.set()
             s.skip_event.set()
+            if s.audio_file_path and s.audio_file_path.exists():
+                try:
+                    s.audio_file_path.unlink()
+                except OSError as e:
+                    logger.warning("Error deleting audio file on stop: %s", e)
+
         if t:
             t.cancel()
             try:
@@ -123,10 +130,9 @@ class RadioManager:
             try:
                 logger.info("[Radio] search chat=%s q=%r attempt=%s", s.chat_id, q, attempt)
                 
-                # Используем новый YouTubeDownloader.search
                 tracks = await self.youtube_downloader.search(
                     q,
-                    limit=self._settings.MAX_RESULTS, # Предполагается, что MAX_RESULTS теперь в Settings
+                    limit=self._settings.MAX_RESULTS,
                     min_duration=self._settings.RADIO_MIN_DURATION_S,
                     max_duration=self._settings.RADIO_MAX_DURATION_S,
                     min_views=self._settings.RADIO_MIN_VIEWS,
@@ -152,7 +158,7 @@ class RadioManager:
         s.fails_in_row += 1
         logger.warning("[Radio] playlist empty after attempts chat=%s fails=%s", s.chat_id, s.fails_in_row)
 
-        if s.fails_in_row >= self._settings.MAX_RETRIES: # Используем MAX_RETRIES из Settings
+        if s.fails_in_row >= self._settings.MAX_RETRIES:
             s.query = random.choice(self._settings.RADIO_GENRES)
             s.fails_in_row = 0
             logger.warning("[Radio] auto-change genre chat=%s new_query=%r", s.chat_id, s.query)
@@ -164,49 +170,45 @@ class RadioManager:
                 if not s.playlist:
                     await asyncio.sleep(3)
                     continue
-
-            track_info = s.playlist.popleft() # Теперь это TrackInfo
+            
+            # Удаляем старый файл, если он был
+            if s.audio_file_path and s.audio_file_path.exists():
+                try:
+                    s.audio_file_path.unlink()
+                except OSError as e:
+                    logger.warning("Error deleting old audio file: %s", e)
+            
+            s.audio_file_path = None
+            track_info = s.playlist.popleft()
             s.current = track_info
             s.skip_event.clear()
 
             try:
                 await self.bot.send_message(s.chat_id, f"⏳ Скачиваю: `{track_info.title}`", parse_mode="Markdown")
 
-                # Используем новый YouTubeDownloader.download_with_retry
                 download_result = await self.youtube_downloader.download_with_retry(track_info.identifier)
 
                 if not download_result.success:
                     s.last_error = download_result.error
                     logger.warning(f"[Radio] Skip failed track: {track_info.identifier} - {download_result.error}")
-                    # Не ждём, сразу берём следующий трек
                     continue
 
                 if not download_result.file_path or not download_result.track_info:
-                    s.last_error = download_result.error or "Unknown download error: file_path or track_info missing"
+                    s.last_error = download_result.error or "Unknown download error"
                     logger.warning("[Radio] Download result missing file_path or track_info chat=%s track=%s error=%s", s.chat_id, track_info.identifier, s.last_error)
                     continue
 
+                s.audio_file_path = Path(download_result.file_path)
 
-                # отправка файла
-                with Path(download_result.file_path).open("rb") as f:
+                with s.audio_file_path.open("rb") as f:
                     await self.bot.send_audio(
                         chat_id=s.chat_id,
                         audio=f,
                         title=download_result.track_info.title[:64],
-                        caption=download_result.track_info.display_name, # Используем display_name
+                        caption=download_result.track_info.display_name,
                         performer=download_result.track_info.artist,
                         duration=download_result.track_info.duration,
                     )
-                
-                # После отправки, удаляем файл
-                try:
-                    file_path = Path(download_result.file_path)
-                    file_path.unlink()
-                    if file_path.parent != self._settings.DOWNLOADS_DIR: # Если временная папка, удаляем ее
-                        file_path.parent.rmdir()
-                except Exception as e:
-                    logger.warning(f"Ошибка при удалении загруженного файла {download_result.file_path}: {e}")
-
 
             except asyncio.TimeoutError:
                 s.last_error = "download timeout"
@@ -220,7 +222,7 @@ class RadioManager:
             try:
                 done, pending = await asyncio.wait(
                     [
-                        asyncio.create_task(asyncio.sleep(self._settings.RADIO_COOLDOWN_S)), # Используем RADIO_COOLDOWN_S из Settings
+                        asyncio.create_task(asyncio.sleep(self._settings.RADIO_COOLDOWN_S)),
                         asyncio.create_task(s.skip_event.wait()),
                         asyncio.create_task(s.stop_event.wait()),
                     ],

@@ -83,7 +83,18 @@ async def lifespan(app: FastAPI):
     await cache.close()
 
 
+from pydantic import BaseModel
+from fastapi import FastAPI, Request, HTTPException
+
+# ... (other imports)
+
+# ... (lifespan function)
+
 app = FastAPI(lifespan=lifespan)
+
+# Pydantic model for request bodies
+class ChatIdPayload(BaseModel):
+    chat_id: int
 
 # статика webapp
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
@@ -95,9 +106,28 @@ async def health():
 
 
 @app.get("/api/radio/status")
-async def radio_status():
-    radio = app.state.radio
-    return JSONResponse(radio.status())
+async def radio_status(chat_id: int | None = None):
+    radio: RadioManager = app.state.radio
+    full_status = radio.status()
+    if chat_id:
+        chat_id_str = str(chat_id)
+        if chat_id_str in full_status.get("sessions", {}):
+             return JSONResponse({"sessions": {chat_id_str: full_status["sessions"][chat_id_str]}})
+        else:
+             return JSONResponse({"sessions": {}})
+    return JSONResponse(full_status)
+
+@app.post("/api/radio/skip")
+async def radio_skip(payload: ChatIdPayload, req: Request):
+    radio: RadioManager = app.state.radio
+    await radio.skip(payload.chat_id)
+    return {"ok": True}
+
+@app.post("/api/radio/stop")
+async def radio_stop(payload: ChatIdPayload, req: Request):
+    radio: RadioManager = app.state.radio
+    await radio.stop(payload.chat_id)
+    return {"ok": True, "message": f"Radio stopped for chat_id {payload.chat_id}"}
 
 
 @app.post("/telegram")
@@ -110,16 +140,16 @@ async def telegram_webhook(req: Request):
 
 @app.get("/audio/{track_id}")
 async def get_audio_file(track_id: str):
-    logger.debug("Request for audio file with track_id: %s", track_id)
-    radio = app.state.radio
-    for chat_id, session in radio._sessions.items():
-        if session.current and session.current.id == track_id:
-            logger.debug("Found session for track_id %s in chat %s. Current track_id: %s, audio_file_path: %s, exists: %s",
-                         track_id, chat_id, session.current.id, session.audio_file_path, session.audio_file_path.exists() if session.audio_file_path else "N/A")
+    logger.debug(f"Request for audio file with track_id: {track_id}")
+    radio: RadioManager = app.state.radio
+    for session in radio._sessions.values():
+        if session.current and session.current.identifier == track_id:
+            logger.debug(f"Found session for track_id {track_id}. Path: {session.audio_file_path}")
             if session.audio_file_path and session.audio_file_path.exists():
                 return FileResponse(session.audio_file_path, media_type="audio/mpeg")
             else:
-                logger.warning("Audio file not found for track_id: %s at path: %s", track_id, session.audio_file_path)
-                return JSONResponse({"error": "Audio file not found"}, status_code=404)
-    logger.warning("Track_id %s not found in any active session.", track_id)
-    return JSONResponse({"error": "Track not found or not currently playing"}, status_code=404)
+                logger.warning(f"Audio file not found for track_id: {track_id} at path: {session.audio_file_path}")
+                raise HTTPException(status_code=404, detail="Audio file not found on disk, it might have been cleaned up.")
+    
+    logger.warning(f"Track_id {track_id} not found in any active session.")
+    raise HTTPException(status_code=404, detail="Track not found or not currently playing")

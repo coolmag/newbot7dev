@@ -12,11 +12,13 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    CallbackQueryHandler,
 )
 from telegram.error import BadRequest
 
 from radio import RadioManager
 from config import Settings # Изменено на Settings
+from keyboards import get_main_menu_keyboard, get_genre_keyboard
 
 logger = logging.getLogger("handlers")
 
@@ -39,8 +41,8 @@ async def safe_answer_callback(query, text: str | None = None) -> None:
         raise
 
 
-def player_markup(base_url: str, chat_type: str) -> InlineKeyboardMarkup:
-    webapp_url = f"{base_url}/webapp/"
+def player_markup(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
+    webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
     if chat_type == ChatType.PRIVATE:
         btn = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
     else:
@@ -58,6 +60,13 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             "/skip — следующий трек\n"
             "/stop — остановить радио\n"
             "/status — статус\n"
+            "/menu — открыть меню\n"
+        )
+
+    async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await update.effective_message.reply_text(
+            "Главное меню:",
+            reply_markup=get_main_menu_keyboard(),
         )
 
     async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -69,9 +78,10 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
     async def player_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat_type = update.effective_chat.type
+        chat_id = update.effective_chat.id
         await update.effective_message.reply_text(
             "Нажмите кнопку ниже, чтобы открыть веб-плеер:",
-            reply_markup=player_markup(settings.BASE_URL, chat_type), # Используем settings.BASE_URL
+            reply_markup=player_markup(settings.BASE_URL, chat_type, chat_id), # Используем settings.BASE_URL
         )
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -107,11 +117,28 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             f"- playlist: {s['playlist_len']}\n"
             f"- last_error: {s['last_error']}\n"
         )
+    
+    async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        await safe_answer_callback(query)
+        data = query.data
+
+        if data == "main_menu":
+            await query.edit_message_text(text="Главное меню:", reply_markup=get_main_menu_keyboard())
+        elif data == "radio_genre":
+            await query.edit_message_text(text="Выберите жанр:", reply_markup=get_genre_keyboard())
+        elif data.startswith("genre_"):
+            genre = data.split("_")[1]
+            await radio.start(update.effective_chat.id, genre)
+            await query.edit_message_text(text=f"✅ Радио запущено: {genre}")
+
 
     app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("menu", menu_cmd))
     app.add_handler(CommandHandler("admin", admin_cmd))
     app.add_handler(CommandHandler("player", player_cmd))
     app.add_handler(CommandHandler("radio", radio_cmd))
     app.add_handler(CommandHandler("stop", stop_cmd))
     app.add_handler(CommandHandler("skip", skip_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CallbackQueryHandler(button_callback))
