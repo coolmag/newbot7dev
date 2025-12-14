@@ -1,9 +1,7 @@
-console.log("script.js loaded and running");
-
-document.addEventListener('DOMContentLoaded', () => {
   let currentTrack = null;
   let isPlaying = false;
   let isUpdating = false;
+  let chatId = null;
 
   // ===== DOM ЭЛЕМЕНТЫ =====
   const audioPlayer = document.getElementById('audio-player');
@@ -181,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await audioPlayer.play();
       } catch (error) {
         console.warn('Autoplay was prevented:', error);
-        // Может потребоваться показать пользователю кнопку "Play"
       }
     } else {
       audioPlayer.pause();
@@ -189,16 +186,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnStop.addEventListener('click', async () => {
+    if (!chatId) return;
     try {
-      await fetch('/api/radio/stop', { method: 'POST' });
+      await fetch('/api/radio/stop', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId })
+      });
     } catch (e) {
       console.error('Stop error:', e);
     }
   });
 
   btnNext.addEventListener('click', async () => {
+    if (!chatId) return;
     try {
-      await fetch('/api/radio/skip', { method: 'POST' });
+      await fetch('/api/radio/skip', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId })
+      });
     } catch (e) {
       console.error('Skip error:', e);
     }
@@ -239,8 +246,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   audioPlayer.addEventListener('ended', async () => {
     if (!audioPlayer.loop) {
+      if (!chatId) return;
       try {
-        await fetch('/api/radio/skip', { method: 'POST' });
+        await fetch('/api/radio/skip', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId })
+        });
       } catch (e) {
         console.error('Auto-skip error:', e);
       }
@@ -250,16 +262,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===== ПОЛУЧЕНИЕ СТАТУСА =====
   async function tick() {
     console.log("Tick function called");
-    if (isUpdating) return;
+    if (isUpdating || !chatId) return;
     isUpdating = true;
     
     try {
-      const response = await fetch('/api/radio/status');
+      const response = await fetch(`/api/radio/status?chat_id=${chatId}`);
       const data = await response.json();
       
-      const sessions = data.sessions || {};
-      const sessionKeys = Object.keys(sessions);
-      const session = sessionKeys.length > 0 ? sessions[sessionKeys[0]] : null;
+      const session = data.sessions ? data.sessions[chatId] : null;
       
       if (session && session._debug_info) {
           console.log("Debug Info:", session._debug_info);
@@ -279,7 +289,6 @@ document.addEventListener('DOMContentLoaded', () => {
               }
           }
       } else if (!session && audioPlayer.src) {
-          // Если сессий нет, останавливаем плеер
           audioPlayer.pause();
           audioPlayer.src = '';
       }
@@ -295,6 +304,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== TELEGRAM WEBAPP & INIT =====
   function initialize() {
+      const urlParams = new URLSearchParams(window.location.search);
+      chatId = urlParams.get('chat_id');
+      console.log("Initialized with chatId:", chatId);
+
       audioPlayer.volume = volumeSlider.value / 100;
 
       if (window.Telegram && window.Telegram.WebApp) {
