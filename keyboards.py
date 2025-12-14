@@ -21,7 +21,7 @@ def get_genre_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("🤘 Rock", callback_data="genre_rock"),
             InlineKeyboardButton("🕺 Pop", callback_data="genre_pop"),
-            InlineKeyboardButton(" इलेक्ट्रॉनिक", callback_data="genre_electronic"),
+            InlineKeyboardButton("🎹 Electronic", callback_data="genre_electronic"),
         ],
         [
             InlineKeyboardButton("⬅️ Назад", callback_data="main_menu"),

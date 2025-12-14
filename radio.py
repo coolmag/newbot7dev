@@ -62,8 +62,13 @@ class RadioManager:
                     "source": s.current.source,
                     "identifier": s.current.identifier,
                 }
+                # Логирование для отладки плеера
                 if s.audio_file_path and s.audio_file_path.exists() and s.current.identifier:
-                    current_track_info["audio_url"] = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
+                    audio_url = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
+                    current_track_info["audio_url"] = audio_url
+                    logger.debug(f"[STATUS] Generated audio_url for chat {chat_id}: {audio_url}")
+                else:
+                    logger.debug(f"[STATUS] No audio_url for chat {chat_id}. Path: {s.audio_file_path}, Exists: {s.audio_file_path.exists() if s.audio_file_path else 'N/A'}, Identifier: {s.current.identifier}")
 
 
             data[str(chat_id)] = {
@@ -75,7 +80,7 @@ class RadioManager:
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
             }
-        logger.debug("Radio status for chat %s: %s", chat_id, data.get(str(chat_id), {}))
+        logger.debug("Full radio status: %s", data)
         return {"sessions": data}
 
     async def start(self, chat_id: int, query: str) -> None:
