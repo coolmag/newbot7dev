@@ -93,15 +93,10 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         current = s.get("current")
         if current:
             text = (
-                f"🎶 *Сейчас в эфире:*
-"
-                f"*{current.get('title', 'N/A')}*
-"
-                f"_{current.get('artist', 'N/A')}_
-
-"
-                f"🎧 *Запрос:* `{s['query']}`
-"
+                f"🎶 *Сейчас в эфире:*\n"
+                f"*{current.get('title', 'N/A')}*\n"
+                f"_{current.get('artist', 'N/A')}_\n\n"
+                f"🎧 *Запрос:* `{s['query']}`\n"
                 f"⌛ *В очереди:* `{s['playlist_len']}` треков"
             )
             await update.effective_message.reply_text(
