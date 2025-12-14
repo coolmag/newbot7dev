@@ -164,11 +164,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     btnPlay.addEventListener('click', async () => {
+        console.log('Play button clicked'); // Логирование клика
+        userGestureMade = true; // Пользователь нажал кнопку
         if (audioPlayer.paused && audioPlayer.src) {
             try {
                 await audioPlayer.play();
             } catch (error) {
-                console.warn('Autoplay was prevented:', error);
+                console.warn('Play failed:', error);
             }
         } else {
             audioPlayer.pause();
@@ -176,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     btnStop.addEventListener('click', async () => {
+        console.log('Stop button clicked'); // Логирование клика
         if (!chatId) return;
         try {
             await fetch('/api/radio/stop', {
@@ -183,12 +186,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: chatId })
             });
+            audioPlayer.pause(); // Мгновенная пауза на фронте
+            audioPlayer.src = ''; // Очистка источника
         } catch (e) {
             console.error('Stop error:', e);
         }
     });
 
     btnNext.addEventListener('click', async () => {
+        console.log('Next button clicked'); // Логирование клика
         if (!chatId) return;
         try {
             await fetch('/api/radio/skip', {

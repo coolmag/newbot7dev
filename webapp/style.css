@@ -441,17 +441,23 @@ body {
 }
 
 .reel.spinning {
-  transform-origin: center center;
-  animation: spin 1s linear infinite;
+  animation: reelSpin 1s linear infinite;
+  will-change: transform; /* Для улучшения производительности */
 }
 
 .reel.spinning .reel-spokes {
-  animation: spin 0.5s linear infinite reverse;
+  animation: spokesSpin 0.5s linear infinite reverse;
+  will-change: transform; /* Для улучшения производительности */
 }
 
-@keyframes spin {
+@keyframes reelSpin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes spokesSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(-360deg); }
 }
 
 .tape-path {
