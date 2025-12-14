@@ -4,7 +4,8 @@ import asyncio
 import logging
 import random
 import os
-import time # Добавлено
+import time
+import mimetypes
 from datetime import datetime, timedelta
 from typing import Optional, Set, Dict, Deque, List, Callable
 from collections import deque
@@ -72,6 +73,10 @@ class RadioManager:
                 if s.audio_file_path and s.audio_file_path.exists() and s.current.identifier:
                     audio_url = f"{self._settings.BASE_URL}/audio/{s.current.identifier}"
                     current_track_info["audio_url"] = audio_url
+                    
+                    mime_type, _ = mimetypes.guess_type(str(s.audio_file_path))
+                    current_track_info["audio_mime"] = mime_type or "application/octet-stream"
+
 
             data[str(chat_id)] = {
                 "chat_id": chat_id,
@@ -81,6 +86,13 @@ class RadioManager:
                 "playlist_len": len(s.playlist),
                 "fails_in_row": s.fails_in_row,
                 "last_error": s.last_error,
+                 "_debug_info": {
+                    "path": str(s.audio_file_path) if s.audio_file_path else None,
+                    "exists": s.audio_file_path.exists() if s.audio_file_path else False,
+                    "identifier": s.current.identifier if s.current else None,
+                    "audio_url": current_track_info.get("audio_url") if current_track_info else None,
+                    "audio_mime": current_track_info.get("audio_mime") if current_track_info else None,
+                }
             }
         return {"sessions": data}
 

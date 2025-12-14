@@ -1,9 +1,7 @@
 import asyncio
 import glob
 import logging
-import random
 import re
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,51 +15,11 @@ from cache import CacheService
 logger = logging.getLogger(__name__)
 
 
-class BaseDownloader(ABC):
+class YouTubeDownloader:
     def __init__(self, settings: Settings, cache_service: CacheService):
         self._settings = settings
         self._cache = cache_service
         self.semaphore = asyncio.Semaphore(3)
-
-    @abstractmethod
-    async def search(self, query: str, **kwargs) -> List[TrackInfo]:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def download(self, query: str) -> DownloadResult:
-        raise NotImplementedError
-
-    async def download_with_retry(self, query: str) -> DownloadResult:
-        for attempt in range(self._settings.MAX_RETRIES):
-            try:
-                async with self.semaphore:
-                    result = await self.download(query)
-
-                if result and result.success:
-                    return result
-
-                # Не ретраим заведомо бесполезное
-                if result and result.error and "Requested format is not available" in (result.error or ""):
-                    return result
-
-                # 503 — даём больше паузы
-                if result and result.error and "503" in result.error:
-                    await asyncio.sleep(60 * (attempt + 1))
-
-            except asyncio.TimeoutError:
-                logger.error("[Downloader] Timeout", exc_info=True)
-            except Exception:
-                logger.error("[Downloader] Unexpected exception", exc_info=True)
-
-            if attempt < self._settings.MAX_RETRIES - 1:
-                await asyncio.sleep(self._settings.RETRY_DELAY_S * (attempt + 1))
-
-        return DownloadResult(success=False, error="Не удалось скачать после нескольких попыток.")
-
-
-class YouTubeDownloader(BaseDownloader):
-    def __init__(self, settings: Settings, cache_service: CacheService):
-        super().__init__(settings, cache_service)
 
     def _base_opts(self) -> Dict[str, Any]:
         opts: Dict[str, Any] = {
@@ -78,8 +36,9 @@ class YouTubeDownloader(BaseDownloader):
             "fragment_retries": 10,
             "skip_unavailable_fragments": True,
             "continuedl": True,
+            "overwrites": True,
         }
-        if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
+        if getattr(self._settings, "COOKIES_FILE", None) and self._settings.COOKIES_FILE.exists():
             opts["cookiefile"] = str(self._settings.COOKIES_FILE)
         return opts
 
@@ -108,10 +67,9 @@ class YouTubeDownloader(BaseDownloader):
             {
                 "format": fmt,
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
+                "max_filesize": self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024,
             }
         )
-        # Ограничение размера — здесь
-        opts["max_filesize"] = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
         return opts
 
     async def _extract_info(
@@ -128,8 +86,8 @@ class YouTubeDownloader(BaseDownloader):
             lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(query, download=download, process=process),
         )
 
-    async def _find_best_match(self, query: str) -> Optional[TrackInfo]:
-        # Можно увеличить ytsearch5/10, если хочешь больше выбора
+    async def _find_best_match(self, query: str) -> Optional[str]:
+        # Можно увеличить ytsearch5 -> ytsearch10
         opts = self._search_opts(
             min_duration=self._settings.PLAY_MIN_DURATION_S,
             max_duration=self._settings.PLAY_MAX_DURATION_S,
@@ -143,13 +101,7 @@ class YouTubeDownloader(BaseDownloader):
                     continue
                 vid = e["id"]
                 if isinstance(vid, str) and len(vid) == 11:
-                    return TrackInfo(
-                        title=e.get("title", "Unknown"),
-                        artist=e.get("channel") or e.get("uploader") or "Unknown",
-                        duration=int(e.get("duration") or 0),
-                        source=Source.YOUTUBE.value,
-                        identifier=vid,
-                    )
+                    return vid
         except Exception:
             logger.warning("[SmartSearch] search failed", exc_info=True)
 
@@ -165,13 +117,34 @@ class YouTubeDownloader(BaseDownloader):
         if not files:
             return None
 
-        # приоритет: mp3/m4a > mp4 > webm/opus/ogg
-        pref = [".mp3", ".m4a", ".mp4", ".webm", ".opus", ".ogg"]
+        # приоритет для WebView: m4a/mp4(aac) > mp3 > остальное
+        pref = [".m4a", ".mp4", ".mp3", ".webm", ".opus", ".ogg"]
         files_sorted = sorted(
             files,
-            key=lambda p: pref.index(Path(p).suffix) if Path(p).suffix in pref else 999,
+            key=lambda p: pref.index(Path(p).suffix.lower()) if Path(p).suffix.lower() in pref else 999,
         )
         return files_sorted[0]
+
+    async def download_with_retry(self, query: str) -> DownloadResult:
+        for attempt in range(self._settings.MAX_RETRIES):
+            try:
+                async with self.semaphore:
+                    result = await self.download(query)
+
+                if result and result.success:
+                    return result
+
+                # Не ретраим заведомо бесполезное
+                if result and result.error and "Requested format is not available" in (result.error or ""):
+                    return result
+
+            except Exception:
+                logger.error("[YouTubeDownloader] download_with_retry exception", exc_info=True)
+
+            if attempt < self._settings.MAX_RETRIES - 1:
+                await asyncio.sleep(self._settings.RETRY_DELAY_S * (attempt + 1))
+
+        return DownloadResult(success=False, error="Не удалось скачать после нескольких попыток.")
 
     async def download(self, query_or_id: str) -> DownloadResult:
         is_id = re.match(r"^[a-zA-Z0-9_-]{11}$", query_or_id) is not None
@@ -185,8 +158,7 @@ class YouTubeDownloader(BaseDownloader):
             if is_id:
                 video_id = query_or_id
             else:
-                best = await self._find_best_match(query_or_id)
-                video_id = best.identifier if best else None
+                video_id = await self._find_best_match(query_or_id)
 
             if not video_id:
                 return DownloadResult(success=False, error="Ничего не найдено.")
@@ -213,8 +185,10 @@ class YouTubeDownloader(BaseDownloader):
 
             # 2) Скачивание с fallback форматами
             format_candidates = [
-                "bestaudio[ext=m4a]/bestaudio/best",  # обычно идеальный вариант
-                "best[acodec!=none]/best",            # фолбэк: если нет audio-only
+                # 1) Идеально для Telegram WebView/iOS: AAC (mp4a) audio-only
+                "bestaudio[vcodec=none][acodec^=mp4a][ext=m4a]/bestaudio[vcodec=none][acodec^=mp4a]",
+                # 2) Любой audio-only (может быть webm/opus — на iOS может не играть)
+                "bestaudio[vcodec=none]/best[acodec!=none][vcodec=none]",
             ]
 
             last_err: Exception | None = None
@@ -238,7 +212,7 @@ class YouTubeDownloader(BaseDownloader):
                     raise
 
             if not download_successful:
-                return DownloadResult(success=False, error=f"Формат недоступен для этого видео: {last_err}")
+                return DownloadResult(success=False, error=f"Requested format is not available: {last_err}")
             
             # 3) Находим реальный файл
             path = self._pick_downloaded_file(video_id)
