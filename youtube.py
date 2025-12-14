@@ -41,7 +41,7 @@ class BaseDownloader(ABC):
                     return result
 
                 # Не ретраим заведомо бесполезное
-                if result and result.error and "Requested format is not available" in result.error:
+                if result and result.error and "Requested format is not available" in (result.error or ""):
                     return result
 
                 # 503 — даём больше паузы

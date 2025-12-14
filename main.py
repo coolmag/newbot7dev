@@ -1,9 +1,8 @@
 import logging
-import mimetypes # Добавлено
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from pydantic import BaseModel, Field
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +19,16 @@ from handlers import setup_handlers
 
 logger = logging.getLogger("main")
 
+def audio_mime_for(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext == ".mp3":
+        return "audio/mpeg"
+    if ext in (".m4a", ".mp4"): # mp4 в этом эндпоинте считаем аудио-контейнером
+        return "audio/mp4"
+    if ext in (".webm", ".opus", ".ogg"):
+        return "audio/webm"
+    mime, _ = mimetypes.guess_type(str(path)) # fallback
+    return mime or "application/octet-stream"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -147,8 +156,7 @@ async def get_audio_file(track_id: str):
             logger.info(f"Found session for track_id {track_id}. Path: {session.audio_file_path}")
             if session.audio_file_path and session.audio_file_path.exists():
                 file_path = session.audio_file_path
-                media_type, _ = mimetypes.guess_type(str(file_path))
-                media_type = media_type or "application/octet-stream"
+                media_type = audio_mime_for(file_path) # Используем новую функцию
                 
                 logger.info(f"Serving file: {file_path} with media_type: {media_type}")
                 return FileResponse(file_path, media_type=media_type, headers={"Cache-Control": "public, max-age=3600"})
