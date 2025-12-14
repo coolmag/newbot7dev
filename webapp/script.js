@@ -239,6 +239,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function setAudioSource(url, mime) {
+        audioPlayer.pause();
+        audioPlayer.innerHTML = ""; // сбросить прошлые <source>
+
+        const s = document.createElement("source");
+        s.src = url;
+        if (mime) s.type = mime;   // например "audio/mp4"
+        audioPlayer.appendChild(s);
+
+        audioPlayer.load();
+    }
+
     // ===== СЕТЕВЫЕ ЗАПРОСЫ =====
     async function tick() {
         console.log("Tick function called");
@@ -250,26 +262,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             const session = data.sessions ? data.sessions[chatId] : null;
 
-            if (session && session._debug_info) {
-                console.log("Debug Info:", session._debug_info);
-            }
-            updateTrackInfo(session);
-
             if (session && session.current && session.current.audio_url) {
-                if (audioPlayer.src !== session.current.audio_url) {
+                // Сравниваем только URL, чтобы не было лишних обновлений
+                const currentAudioSrc = audioPlayer.querySelector('source') ? audioPlayer.querySelector('source').src : audioPlayer.src;
+                if (currentAudioSrc !== session.current.audio_url) {
                     console.log("New track detected. Updating src:", session.current.audio_url);
-                    audioPlayer.src = session.current.audio_url;
-                    audioPlayer.load();
-                    try {
-                        await audioPlayer.play();
-                    } catch (error) {
+                    setAudioSource(session.current.audio_url, session.current.audio_mime);
+                    
+                    if (userGestureMade) {
+                        try {
+                            await audioPlayer.play();
+                        } catch (error) {
+                            console.warn('Autoplay failed after user gesture:', error);
+                        }
+                    } else {
                         console.warn('Autoplay was prevented. User must interact with the page first.');
                     }
                 }
-            } else if (!session && audioPlayer.src) {
+            } else if (!session && (audioPlayer.src || audioPlayer.querySelector('source'))) {
                 audioPlayer.pause();
-                audioPlayer.src = '';
+                audioPlayer.innerHTML = "";
+                audioPlayer.src = "";
             }
+            updateTrackInfo(session); // Обновляем инфо в любом случае
+
         } catch (error) {
             console.error('Status fetch error:', error);
             statusIcon.textContent = '❌';
