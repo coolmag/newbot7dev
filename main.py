@@ -79,6 +79,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+class ChatIdPayload(BaseModel):
+    chat_id: int
+
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
 @app.get("/health")
@@ -86,32 +89,30 @@ async def health():
     return {"ok": True}
 
 @app.get("/api/radio/status")
-async def radio_status():
+async def radio_status(chat_id: int | None = None):
     radio: RadioManager = app.state.radio
-    return JSONResponse(radio.status())
+    full_status = radio.status()
+    if chat_id:
+        chat_id_str = str(chat_id)
+        if chat_id_str in full_status.get("sessions", {}):
+             return JSONResponse({"sessions": {chat_id_str: full_status["sessions"][chat_id_str]}})
+        else:
+             return JSONResponse({"sessions": {}})
+    return JSONResponse(full_status)
 
 @app.post("/api/radio/skip")
-async def radio_skip():
+async def radio_skip(payload: ChatIdPayload):
+    logger.info(f"API: Received skip request for chat_id: {payload.chat_id}")
     radio: RadioManager = app.state.radio
-    # Получаем первую (и, предположительно, единственную) активную сессию
-    if radio._sessions:
-        chat_id = next(iter(radio._sessions))
-        logger.info(f"API: Received skip request for active chat_id: {chat_id}")
-        await radio.skip(chat_id)
-        return {"ok": True}
-    logger.warning("API: Received skip request, but no active sessions.")
-    return JSONResponse({"error": "No active radio session"}, status_code=404)
+    await radio.skip(payload.chat_id)
+    return {"ok": True}
 
 @app.post("/api/radio/stop")
-async def radio_stop():
+async def radio_stop(payload: ChatIdPayload):
+    logger.info(f"API: Received stop request for chat_id: {payload.chat_id}")
     radio: RadioManager = app.state.radio
-    if radio._sessions:
-        chat_id = next(iter(radio._sessions))
-        logger.info(f"API: Received stop request for active chat_id: {chat_id}")
-        await radio.stop(chat_id)
-        return {"ok": True}
-    logger.warning("API: Received stop request, but no active sessions.")
-    return JSONResponse({"error": "No active radio session"}, status_code=404)
+    await radio.stop(payload.chat_id)
+    return {"ok": True, "message": f"Radio stopped for chat_id {payload.chat_id}"}
 
 @app.post("/telegram")
 async def telegram_webhook(req: Request):

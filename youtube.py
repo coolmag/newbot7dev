@@ -111,7 +111,14 @@ class YouTubeDownloader(BaseDownloader):
         else:
             options["format"] = "bestaudio/best"
             options["postprocessors"] = [
-                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}
+                {
+                    "key": "FFmpegExtractAudio", 
+                    "preferredcodec": "mp3",
+                    'postprocessor_args': [
+                        '-ac', '2',
+                        '-ar', '44100'
+                    ],
+                }
             ]
             options["outtmpl"] = str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s")
             if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
