@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 class ChatIdPayload(BaseModel):
-    chat_id: str # Изменено с int на str
+    chat_id: str = Field(..., min_length=5, max_length=20) # chat_id из телеграма может быть длинным
 
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
@@ -140,8 +140,15 @@ async def get_audio_file(track_id: str):
         if session.current and session.current.identifier == track_id:
             logger.info(f"Found session for track_id {track_id}. Path: {session.audio_file_path}")
             if session.audio_file_path and session.audio_file_path.exists():
-                logger.info(f"Serving file: {session.audio_file_path}")
-                return FileResponse(session.audio_file_path, media_type="audio/mpeg")
+                file_extension = session.audio_file_path.suffix.lower()
+                media_type = "audio/mpeg" # Default for mp3
+                if file_extension == ".m4a":
+                    media_type = "audio/mp4"
+                elif file_extension == ".webm":
+                    media_type = "audio/webm"
+                
+                logger.info(f"Serving file: {session.audio_file_path} with media_type: {media_type}")
+                return FileResponse(session.audio_file_path, media_type=media_type)
             else:
                 logger.error(f"Audio file link exists, but file not found on disk for track_id: {track_id} at path: {session.audio_file_path}")
                 raise HTTPException(status_code=404, detail="Audio file not found on disk, it might have been cleaned up.")
