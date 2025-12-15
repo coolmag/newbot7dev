@@ -16,6 +16,7 @@ from cache import CacheService
 from youtube import YouTubeDownloader
 from radio import RadioManager
 from handlers import setup_handlers
+from utils import preload_paths, PATH_STORE  # <--- Импорт утилиты
 
 logger = logging.getLogger("main")
 
@@ -23,17 +24,22 @@ def audio_mime_for(path: Path) -> str:
     ext = path.suffix.lower()
     if ext == ".mp3":
         return "audio/mpeg"
-    if ext in (".m4a", ".mp4"): # mp4 в этом эндпоинте считаем аудио-контейнером
+    if ext in (".m4a", ".mp4"):
         return "audio/mp4"
     if ext in (".webm", ".opus", ".ogg"):
         return "audio/webm"
-    mime, _ = mimetypes.guess_type(str(path)) # fallback
+    mime, _ = mimetypes.guess_type(str(path))
     return mime or "application/octet-stream"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
     settings = Settings()
+
+    # === Инициализация меню ===
+    # Это чинит проблему "Меню устарело" после перезагрузки
+    preload_paths(settings.MUSIC_CATALOG)
+    logger.info(f"✅ Menu paths preloaded. Total items: {len(PATH_STORE)}")
 
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -47,7 +53,15 @@ async def lifespan(app: FastAPI):
 
     youtube_downloader = YouTubeDownloader(settings, cache)
 
-    tg_app = Application.builder().token(settings.BOT_TOKEN).build()
+    # Увеличиваем таймауты для Telegram API, чтобы не было httpx.ReadError
+    tg_app = (
+        Application.builder()
+        .token(settings.BOT_TOKEN)
+        .read_timeout(30)
+        .write_timeout(30)
+        .connect_timeout(30)
+        .build()
+    )
 
     async def on_error(update, context):
         logger.exception("PTB error: %s", context.error)
@@ -68,11 +82,10 @@ async def lifespan(app: FastAPI):
     await tg_app.bot.set_my_commands([
         ("start", "🚀 Запуск/Перезапуск"),
         ("menu", "📖 Главное меню"),
-        ("player", "🎧 Открыть веб-плеер"),
-        ("radio", "📻 Включить радио с запросом"),
-        ("skip", "⏭️ Следующий трек"),
-        ("stop", "⏹️ Остановить радио"),
-        ("status", "📊 Статус радио"),
+        ("player", "🎧 Открыть плеер"),
+        ("radio", "📻 Включить радио"),
+        ("skip", "⏭️ След. трек"),
+        ("stop", "⏹️ Стоп"),
     ])
 
     await tg_app.bot.set_webhook(url=settings.WEBHOOK_URL)
@@ -149,27 +162,22 @@ async def telegram_webhook(req: Request):
 
 @app.get("/audio/{track_id}")
 async def get_audio_file(track_id: str):
-    logger.info(f"Request for audio file with track_id: {track_id}")
+    # logger.info(f"Request for audio: {track_id}") # Можно отключить для чистоты логов
     radio: RadioManager = app.state.radio
+    
+    # Ищем трек в активных сессиях
     for session in radio._sessions.values():
         if session.current and session.current.identifier == track_id:
-            logger.info(f"Found session for track_id {track_id}. Path: {session.audio_file_path}")
             if session.audio_file_path and session.audio_file_path.exists():
                 file_path = session.audio_file_path
-                media_type = audio_mime_for(file_path) # Используем новую функцию
-                
-                logger.info(f"Serving file: {file_path} with media_type: {media_type}")
+                media_type = audio_mime_for(file_path)
                 return FileResponse(
                     file_path,
                     media_type=media_type,
                     headers={
                         "Cache-Control": "public, max-age=3600",
-                        "Access-Control-Allow-Origin": "*" # ВАЖНО ДЛЯ ВИЗУАЛИЗАТОРА!
+                        "Access-Control-Allow-Origin": "*"
                     }
                 )
-            else:
-                logger.error(f"Audio file link exists, but file not found on disk for track_id: {track_id} at path: {session.audio_file_path}")
-                raise HTTPException(status_code=404, detail="Audio file not found on disk, it might have been cleaned up.")
     
-    logger.error(f"Track_id {track_id} not found in any active session.")
-    raise HTTPException(status_code=404, detail="Track not found or not currently playing")
+    raise HTTPException(status_code=404, detail="Track not found")
