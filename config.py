@@ -50,7 +50,6 @@ class Settings(BaseSettings):
 
     # --- Настройки радио ---
     RADIO_SOURCE: str = "youtube"
-    RADIO_COOLDOWN_S: int = 120
     RADIO_MAX_DURATION_S: int = 600
     RADIO_MIN_DURATION_S: int = 60
     RADIO_MIN_VIEWS: Optional[int] = None      # ← Убрал строгий фильтр
