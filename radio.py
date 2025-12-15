@@ -119,7 +119,6 @@ class RadioManager:
             await self._update_dashboard(session, status="🛑 Эфир завершен")
             
     async def stop_all(self):
-        # Копия ключей, так как словарь меняется
         for chat_id in list(self._sessions.keys()):
             await self.stop(chat_id)
 
@@ -259,8 +258,13 @@ class RadioManager:
                 
                 if not result.success:
                     logger.warning(f"Download failed: {result.error}")
-                    await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
-                    await asyncio.sleep(2)
+                    # Если файл слишком большой или ошибка формата - просто идем дальше
+                    if "большой" in str(result.error) or "too large" in str(result.error):
+                         await self._update_dashboard(s, status="⚠️ Слишком большой файл, пропуск...")
+                    else:
+                         await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
+                    
+                    await asyncio.sleep(1)
                     continue 
                 
                 s.audio_file_path = Path(result.file_path)
