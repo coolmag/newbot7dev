@@ -1,42 +1,102 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+import time
+from collections import deque
+from pathlib import Path
+from typing import Optional, Set, Dict, Deque
+from dataclasses import dataclass, field
+
+from telegram import Bot, Message
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
+
+from config import Settings
+from models import TrackInfo
+from youtube import YouTubeDownloader
+from keyboards import get_dashboard_keyboard, get_track_keyboard
+
+logger = logging.getLogger("radio")
+
+@dataclass
+class RadioSession:
+    chat_id: int
+    query: str
+    chat_type: str
+    started_at: float = field(default_factory=time.time)
+    current: Optional[TrackInfo] = None
+    playlist: Deque[TrackInfo] = field(default_factory=deque)
+    played_ids: Set[str] = field(default_factory=set)
+    stop_event: asyncio.Event = field(default_factory=asyncio.Event)
+    skip_event: asyncio.Event = field(default_factory=asyncio.Event)
+    fails_in_row: int = 0
+    audio_file_path: Optional[Path] = None
+    dashboard_msg_id: Optional[int] = None
+
+class RadioManager:
+    def __init__(self, bot: Bot, settings: Settings, downloader: YouTubeDownloader):
+        self._bot = bot
+        self._settings = settings
+        self._downloader = downloader
+        self._sessions: Dict[int, RadioSession] = {}
+        self._tasks: Dict[int, asyncio.Task] = {}
+
+    async def start(self, chat_id: int, query: str, chat_type: str = "private"):
+        await self.stop(chat_id)
+        session = RadioSession(chat_id=chat_id, query=query.strip(), chat_type=chat_type)
+        self._sessions[chat_id] = session
+        msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
+        if msg:
+            session.dashboard_msg_id = msg.message_id
+        self._tasks[chat_id] = asyncio.create_task(self._radio_loop(session))
+
+    async def stop(self, chat_id: int):
+        if task := self._tasks.pop(chat_id, None):
+            task.cancel()
+        if session := self._sessions.pop(chat_id, None):
+            session.stop_event.set()
+            await self._update_dashboard(session, status="🛑 Эфир завершен")
+
+    async def skip(self, chat_id: int):
+        if session := self._sessions.get(chat_id):
+            session.skip_event.set()
+
     async def _radio_loop(self, s: RadioSession):
+        """Профессиональный цикл: новый трек каждые 90 секунд."""
         try:
             while not s.stop_event.is_set():
                 s.skip_event.clear()
 
-                # 1. Пополнение плейлиста
                 if len(s.playlist) < 2:
-                    await self._update_dashboard(s, status="📡 Поиск новых треков...")
                     await self._fetch_playlist(s)
 
                 if not s.playlist:
                     await asyncio.sleep(5)
                     continue
 
-                # 2. Берем следующий трек
                 track = s.playlist.popleft()
                 s.current = track
                 s.played_ids.add(track.identifier)
                 
-                await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
+                await self._update_dashboard(s, status=f"⬇️ Загрузка...")
 
-                # 3. СКАЧИВАНИЕ (с тайм-аутом)
+                # Скачивание с таймаутом
                 try:
-                    # Даем на скачивание 40 секунд из наших 90, чтобы оставить время на проигрывание
                     result = await asyncio.wait_for(
                         self._downloader.download_with_retry(track.identifier),
-                        timeout=40.0
+                        timeout=45.0
                     )
                 except asyncio.TimeoutError:
-                    logger.warning(f"[{s.chat_id}] Download timeout for {track.identifier}")
                     continue
 
                 if not result or not result.success:
-                    logger.warning(f"[{s.chat_id}] Download failed: {result.error}")
                     continue
 
                 s.audio_file_path = Path(result.file_path)
 
-                # 4. ОТПРАВКА В ЧАТ
+                # Отправка аудио
                 try:
                     with open(s.audio_file_path, 'rb') as f:
                         await self._bot.send_audio(
@@ -46,27 +106,54 @@
                             parse_mode=ParseMode.MARKDOWN,
                             reply_markup=get_track_keyboard(track.identifier)
                         )
-                    await self._update_dashboard(s, status="▶️ Сейчас в эфире")
+                    await self._update_dashboard(s, status="▶️ В эфире")
                 except Exception as e:
-                    logger.error(f"[{s.chat_id}] Send audio error: {e}")
+                    logger.error(f"Send error: {e}")
 
-                # 5. ГЛАВНОЕ: ОЖИДАНИЕ 90 СЕКУНД (Цикл переключения)
+                # ОЖИДАНИЕ 90 СЕКУНД ДО СЛЕДУЮЩЕГО ТРЕКА
                 try:
-                    # Бот спит 90 секунд ИЛИ пока не нажмут кнопку "Skip" (skip_event)
                     await asyncio.wait_for(s.skip_event.wait(), timeout=90.0)
-                    logger.info(f"[{s.chat_id}] Track skipped by user")
                 except asyncio.TimeoutError:
-                    # 90 секунд прошло, идем на следующий круг
-                    logger.info(f"[{s.chat_id}] 90s interval reached, next track...")
+                    pass # Время вышло, идем дальше
 
-                # Удаляем старый файл, чтобы не забивать диск Railway
                 if s.audio_file_path and s.audio_file_path.exists():
                     try: s.audio_file_path.unlink()
                     except: pass
 
         except asyncio.CancelledError:
-            logger.info(f"[{s.chat_id}] Radio loop cancelled")
-        except Exception as e:
-            logger.error(f"[{s.chat_id}] Critical radio loop error: {e}", exc_info=True)
+            pass
         finally:
             await self.stop(s.chat_id)
+
+    async def _fetch_playlist(self, s: RadioSession) -> bool:
+        tracks = await self._downloader.search(s.query, limit=10)
+        if tracks:
+            new_tracks = [t for t in tracks if t.identifier not in s.played_ids]
+            s.playlist.extend(new_tracks)
+            return True
+        return False
+
+    async def _send_dashboard(self, s: RadioSession, status: str) -> Optional[Message]:
+        text = self._build_dashboard_text(s, status)
+        try:
+            return await self._bot.send_message(
+                chat_id=s.chat_id, text=text, parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
+            )
+        except: return None
+
+    async def _update_dashboard(self, s: RadioSession, status: str = None):
+        if not s.dashboard_msg_id: return
+        text = self._build_dashboard_text(s, status)
+        try:
+            await self._bot.edit_message_text(
+                chat_id=s.chat_id, message_id=s.dashboard_msg_id,
+                text=text, parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
+            )
+        except: pass
+
+    def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
+        status = status_override or (f"▶️ Играет: {s.current.artist}" if s.current else "⏳ Ожидание...")
+        track_name = (s.current.title if s.current else "...").replace("*", "")
+        return f"📻 *CYBER RADIO V7*\n━━━━━━━━━━━━━━━━━━\n💿 *Трек:* `{track_name}`\n🏷 *Волна:* _{s.query}_\n\nℹ️ _Статус:_ {status}"
