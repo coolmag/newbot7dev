@@ -24,35 +24,30 @@ class YouTubeDownloader:
         self._cache = cache_service
         self.semaphore = asyncio.Semaphore(3)
 
-    def _get_opts(self, mode: str = "download") -> Dict[str, Any]:
+    def _get_opts(self, is_search: bool = False) -> Dict[str, Any]:
         """
-        Генерация настроек для разных режимов.
+        Настройки для жесткой фильтрации.
         """
-        # Базовые настройки (максимальная маскировка под браузер)
         opts: Dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "socket_timeout": 10,
+            "socket_timeout": 15,
             "source_address": "0.0.0.0",
             "no_check_certificate": True,
+            "prefer_insecure": True,
             "geo_bypass": True,
-            # User-Agent как у реального браузера (важно для снятия ограничений)
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "retries": 3,
+            "fragment_retries": 3,
+            "skip_unavailable_fragments": True,
         }
 
         if getattr(self._settings, "COOKIES_FILE", None) and self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
             opts["cookiefile"] = str(self._settings.COOKIES_FILE)
 
-        # РЕЖИМ 1: БЫСТРЫЙ ПОИСК (Flat)
-        if mode == "search":
-            opts.update({
-                "extract_flat": True,  # Не качаем метаданные видео, только список
-                "skip_download": True,
-            })
-
-        # РЕЖИМ 2: ЗАГРУЗКА (Download)
-        elif mode == "download":
+        if is_search:
+            opts["extract_flat"] = True
+        else:
             opts.update({
                 "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
@@ -61,23 +56,20 @@ class YouTubeDownloader:
                     "preferredcodec": "mp3",
                     "preferredquality": "128",
                 }],
-                # Жесткий лимит на размер (дублирующая защита)
-                "max_filesize": 50 * 1024 * 1024,
-                "retries": 5,
-                "fragment_retries": 5,
+                # Жесткий лимит 20 МБ (это ~20 минут музыки в 128kbps)
+                "max_filesize": 20 * 1024 * 1024,
             })
         
         return opts
 
-    async def _extract_info(self, query: str, opts: Dict[str, Any]) -> Dict[str, Any]:
+    async def _extract_info(self, query: str, opts: Dict[str, Any], download: bool = False) -> Dict[str, Any]:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=False)
+            lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=download)
         )
 
     def _find_downloaded_file(self, video_id: str) -> Optional[str]:
-        """Ищет файл на диске, игнорируя расширение."""
         pattern = str(self._settings.DOWNLOADS_DIR / f"{video_id}.*")
         files = glob.glob(pattern)
         valid_files = [f for f in files if not f.endswith((".part", ".ytdl", ".json", ".webp", ".jpg", ".png"))]
@@ -94,66 +86,42 @@ class YouTubeDownloader:
         **kwargs,
     ) -> List[TrackInfo]:
         """
-        Профессиональный поиск: 'Flat Extraction' + 'Python Filtering'.
+        Поиск с предварительной фильтрацией.
         """
-        # Добавляем "минус-слова" прямо в запрос к YouTube
-        clean_query = f'{query} -live -stream -"10 hours" -"full album"'
+        clean_query = f'{query} -live -radio -stream -24/7 -"10 hours" -"1 hour"'
         search_query = f"ytsearch{limit * 2}:{clean_query}"
-        
-        # Используем режим "search" (extract_flat=True)
-        opts = self._get_opts(mode="search")
+        opts = self._get_opts(is_search=True)
 
         try:
-            info = await self._extract_info(search_query, opts)
+            info = await self._extract_info(search_query, opts, download=False)
             entries = info.get("entries", []) or []
 
             out: List[TrackInfo] = []
             
-            # Стоп-слова для названий
-            BANNED = [
-                '10 hours', '1 hour', 'mix 20', 'full album', 'playlist', 
-                'compilation', 'live radio', '24/7', 'stream'
-            ]
+            # Строгий черный список
+            BANNED = ['10 hours', '1 hour', 'mix 20', 'full album', 'playlist', 'compilation', 'live']
 
             for e in entries:
-                if not e: continue
+                if not e or not e.get("id"): continue
                 
-                # Получаем ID и Название
-                vid_id = e.get("id")
                 title = e.get("title", "").lower()
-                
-                if not vid_id: continue
-
-                # 1. Проверка на Live (в flat mode это поле может называться иначе)
-                if e.get("live_status") == "is_live" or e.get("is_live"):
+                if any(b in title for b in BANNED) and "mix" not in query.lower():
                     continue
 
-                # 2. Проверка названия
-                if any(b in title for b in BANNED):
-                    if "mix" not in query.lower():
-                        continue
-
-                # 3. КРИТИЧЕСКИ ВАЖНО: Длительность
-                # В extract_flat длительность есть, но если это стрим, она может быть None или 0
-                duration = e.get("duration")
-                
-                if duration is None:
-                    # Если YouTube не отдал длительность - это с 99% вероятностью стрим. Скипаем.
+                duration = int(e.get("duration") or 0)
+                # Если длительность 0 или больше 10 минут (600 сек) - ВЫКИДЫВАЕМ
+                if duration == 0 or duration > 600: 
                     continue
-                
-                duration = int(duration)
-                
-                if duration == 0: continue # Стрим
-                if duration > 900: continue # > 15 мин
-                if duration < 30: continue # < 30 сек
+                if duration < 30: 
+                    continue
 
                 out.append(
                     TrackInfo(
                         title=e.get("title", "Unknown"),
-                        artist=e.get("uploader") or e.get("channel") or "Unknown",
+                        artist=e.get("channel") or e.get("uploader") or "Unknown",
                         duration=duration,
                         source=Source.YOUTUBE.value,
-                        identifier=vid_id,
+                        identifier=e["id"],
                     )
                 )
                 if len(out) >= limit: break
@@ -172,13 +140,8 @@ class YouTubeDownloader:
                 if result and result.success:
                     return result
 
-                # Фатальные ошибки
-                err = str(result.error).lower()
-                if "too long" in err or "large" in err or "found" in err:
-                    return result
-
-                if "503" in err:
-                    await asyncio.sleep(5 * (attempt + 1))
+                if result.error and "large" in str(result.error):
+                    return result # Не ретраим, если файл большой
 
             except Exception as e:
                 logger.error(f"DL Attempt {attempt+1} error: {e}")
@@ -190,19 +153,16 @@ class YouTubeDownloader:
 
     async def download(self, query_or_id: str) -> DownloadResult:
         is_id = self.YT_ID_RE.match(query_or_id) is not None
-        video_id: str
+        video_id = query_or_id if is_id else None
 
         try:
-            if is_id:
-                video_id = query_or_id
-            else:
-                # Если передан текст, ищем через наш умный фильтр
+            if not video_id:
                 found = await self.search(query_or_id, limit=1)
                 if not found:
-                    return DownloadResult(success=False, error="Треки не найдены (фильтр отсек стримы).")
+                    return DownloadResult(success=False, error="Ничего не найдено (строгий фильтр).")
                 video_id = found[0].identifier
 
-            # 1. Проверка кэша
+            # 1. Проверка Кэша
             cache_key = f"yt:{video_id}"
             cached = await self._cache.get(cache_key, Source.YOUTUBE)
             if cached and Path(cached.file_path).exists():
@@ -210,16 +170,32 @@ class YouTubeDownloader:
             elif cached:
                 await self._cache.delete(cache_key)
 
-            # 2. Скачивание
             video_url = f"https://www.youtube.com/watch?v={video_id}"
-            opts = self._get_opts(mode="download")
+            opts = self._get_opts(is_search=False)
             loop = asyncio.get_running_loop()
             
+            # === ГЛАВНОЕ ИЗМЕНЕНИЕ: Сначала проверяем, потом качаем ===
             try:
+                # 1. Легкий запрос только за метаданными
+                info_check = await self._extract_info(video_url, self._get_opts(is_search=True), download=False)
+                
+                if info_check:
+                    dur = int(info_check.get("duration") or 0)
+                    is_live = info_check.get("is_live") or info_check.get("live_status") == "is_live"
+                    
+                    # Если > 10 минут или стрим -> ОТМЕНА
+                    if is_live:
+                        return DownloadResult(success=False, error="Это Live-трансляция.")
+                    if dur > 600:
+                        return DownloadResult(success=False, error=f"Трек слишком длинный ({dur}s).")
+                    if dur == 0:
+                        return DownloadResult(success=False, error="Неизвестная длительность (вероятно, стрим).")
+
+                # 2. Если проверка пройдена, качаем
                 await asyncio.wait_for(
                     loop.run_in_executor(
                         None, 
-                        lambda: yt_dlp.YoutubeDL(opts).download([video_url]) # Используем .download(), а не extract_info
+                        lambda: yt_dlp.YoutubeDL(opts).extract_info(video_url, download=True)
                     ),
                     timeout=self._settings.DOWNLOAD_TIMEOUT_S
                 )
@@ -227,37 +203,32 @@ class YouTubeDownloader:
                  return DownloadResult(success=False, error="Таймаут скачивания.")
             except Exception as e:
                 if "File is larger" in str(e):
-                    return DownloadResult(success=False, error="Файл слишком большой.")
-                # Идем дальше, проверяем файл
+                    return DownloadResult(success=False, error="Файл слишком большой (> 20MB).")
+                logger.warning(f"Download warning: {e}")
 
             # 3. Поиск файла
             final_path = self._find_downloaded_file(video_id)
             if not final_path:
-                return DownloadResult(success=False, error="Файл не скачался (возможно, стрим или ошибка доступа).")
+                return DownloadResult(success=False, error="Файл не найден на диске.")
 
-            # 4. Метаданные (быстрый запрос, если нужно)
-            track_info = None
+            # 4. Финальные метаданные
+            info = {}
             try:
-                # Берем метаданные через flat search по ID (быстро и безопасно)
-                info = await self._extract_info(video_id, self._get_opts(mode="search"))
-                if info and info.get('entries'):
-                    e = info['entries'][0]
-                    track_info = TrackInfo(
-                        title=e.get("title", "Unknown"),
-                        artist=e.get("uploader", "Unknown"),
-                        duration=int(e.get("duration") or 0),
-                        source=Source.YOUTUBE.value,
-                        identifier=video_id,
-                    )
+                info = await self._extract_info(video_url, self._get_opts(is_search=True), download=False)
             except: pass
 
-            if not track_info:
-                track_info = TrackInfo("Unknown", "Unknown", 0, Source.YOUTUBE.value, video_id)
+            track_info = TrackInfo(
+                title=info.get("title", "Unknown"),
+                artist=info.get("channel") or info.get("uploader") or "Unknown",
+                duration=int(info.get("duration") or 0),
+                source=Source.YOUTUBE.value,
+                identifier=video_id,
+            )
 
             result = DownloadResult(True, final_path, track_info)
             await self._cache.set(cache_key, Source.YOUTUBE, result)
             return result
 
         except Exception as e:
-            logger.error(f"Critical DL error: {e}", exc_info=True)
+            logger.error(f"DL error: {e}", exc_info=True)
             return DownloadResult(success=False, error=str(e))
