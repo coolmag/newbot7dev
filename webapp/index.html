@@ -3,78 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cyber Walkman</title>
-    <link rel="stylesheet" href="/webapp/style.css">
+    <title>Winamp Player</title>
+    <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
-    <div class="walkman-wrapper">
-        <div class="walkman-case">
-            <!-- Branding -->
-            <div class="brand-area">
-                <div class="brand-logo">SONY // CYBER</div>
-                <div class="model-id">WM-2077</div>
-            </div>
-
-            <!-- LCD Display -->
-            <div class="lcd-screen">
-                <div class="lcd-content">
-                    <div class="status-row">
-                        <span id="status-text">READY</span>
-                        <span>BATT 99%</span>
-                    </div>
-                    
-                    <!-- REAL CANVAS VISUALIZER -->
-                    <canvas id="visualizer-canvas" width="300" height="50"></canvas>
-                    
-                    <div class="track-info-lcd">
-                        <div id="track-title" class="scrolling-text">WAITING FOR SIGNAL...</div>
-                        <div id="track-artist">System Standby</div>
-                    </div>
-
-                    <div class="time-row">
-                        <span id="current-time">0:00</span>
-                        <span id="total-time">0:00</span>
-                    </div>
-                    
-                    <div class="progress-container" id="progress-container">
-                        <div class="progress-fill" id="progress-fill"></div>
-                    </div>
+    <div class="winamp-container">
+        <!-- ГЛАВНОЕ ОКНО -->
+        <div class="window main-window">
+            <div class="title-bar">
+                <span class="title-text">WINAMP 2.91</span>
+                <div class="window-controls">
+                    <div class="win-btn"></div>
+                    <div class="win-btn"></div>
                 </div>
             </div>
 
-            <!-- Cassette Mechanism -->
-            <div class="cassette-deck">
-                <div class="tape-window">
-                    <div class="glass-reflection"></div>
-                    <div class="reel spinning" id="reel-left"></div>
-                    <div class="tape-strip"></div>
-                    <div class="reel spinning" id="reel-right"></div>
-                </div>
-            </div>
-
-            <!-- Controls -->
-            <div class="controls-area">
-                <div class="buttons-row">
-                    <button class="btn" id="btn-prev">⏮</button>
-                    <button class="btn btn-play" id="btn-play">▶</button>
-                    <button class="btn" id="btn-stop">⏹</button>
-                    <button class="btn" id="btn-next">⏭</button>
+            <!-- ДИСПЛЕЙ -->
+            <div class="display-area">
+                <!-- Таймер -->
+                <div class="timer-box">
+                    <div class="timer-digits" id="time-display">00:00</div>
                 </div>
                 
-                <div class="volume-control">
-                    <span class="vol-icon">🔊</span>
-                    <input type="range" id="volume-slider" min="0" max="100" value="80">
+                <!-- Инфо -->
+                <div class="kbps-info">
+                    128 <span style="color:#aaa">kbps</span> 
+                    44 <span style="color:#aaa">kHz</span>
                 </div>
+
+                <!-- Визуализатор -->
+                <div class="visualizer-box">
+                    <canvas id="visualizer"></canvas>
+                </div>
+
+                <!-- Бегущая строка -->
+                <div class="song-ticker">
+                    <div class="marquee" id="track-title">WINAMP DEMO - IT REALLY WHIPS THE LLAMA'S ASS</div>
+                </div>
+            </div>
+
+            <!-- УПРАВЛЕНИЕ -->
+            <div class="controls-row">
+                <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="80" title="Volume">
+                <div style="font-size: 10px; color: #aaa;">BALANCE</div>
+            </div>
+
+            <div class="controls-row">
+                <div class="main-buttons">
+                    <div class="btn" id="btn-prev" title="Previous">⏮</div>
+                    <div class="btn btn-big" id="btn-play" title="Play">▶</div>
+                    <div class="btn btn-big" id="btn-pause" title="Pause">⏸</div>
+                    <div class="btn btn-big" id="btn-stop" title="Stop">⏹</div>
+                    <div class="btn" id="btn-next" title="Next">⏭</div>
+                </div>
+                <div class="btn" id="btn-eject" title="Open File">⏏</div>
+            </div>
+        </div>
+
+        <!-- ОКНО ПЛЕЙЛИСТА -->
+        <div class="window playlist-window">
+            <div class="title-bar">
+                <span class="title-text">WINAMP PLAYLIST</span>
+            </div>
+            <div class="playlist-content" id="playlist">
+                <div class="playlist-item active">1. Loading...</div>
+                <div class="playlist-item queue">2. [Empty]</div>
+                <div class="playlist-item queue">3. [Empty]</div>
+            </div>
+            <div class="playlist-header">
+                <span id="playlist-status">LIST OPTS</span>
             </div>
         </div>
     </div>
 
-    <!-- Hidden Audio Element -->
-    <!-- crossorigin="anonymous" ВАЖЕН для визуализатора, иначе браузер заблокирует доступ к аудиоданным -->
+    <!-- Аудио элемент -->
     <audio id="audio-player" crossorigin="anonymous"></audio>
 
-    <script src="/webapp/script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
