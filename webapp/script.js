@@ -28,7 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ===== HAPTIC FEEDBACK HELPER =====
     function haptic(style = 'light') {
-        if (tg.HapticFeedback) {
+        // Проверяем, поддерживает ли текущая версия Телеграма вибрацию
+        if (tg.HapticFeedback && tg.isVersionAtLeast('6.1')) {
             tg.HapticFeedback.impactOccurred(style);
         }
     }
@@ -204,9 +205,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Update Metadata
                 const title = session.current.title;
                 if (trackTitle.innerText !== title) {
-                     trackTitle.innerText = title;
-                     trackTitle.classList.add('animate');
-                     trackArtist.innerText = session.current.artist || "Unknown Artist";
+                     trackTitle.innerText = "DATA UPLINK..."; // Показываем загрузку перед названием
+                     trackTitle.classList.remove('animate'); // Убрать анимацию, пока идет загрузка
+                     trackArtist.innerText = session.current.artist || "Unknown Artist"; // Обновляем артиста сразу
+                     
+                     setTimeout(() => {
+                         trackTitle.innerText = title;
+                         trackTitle.classList.add('animate');
+                     }, 500); // Небольшая задержка для эффекта
                      
                      // New Track Source
                      // Важно: crossOrigin="anonymous" нужен для Canvas Visualizer!
