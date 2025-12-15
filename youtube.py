@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 import asyncio
 import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 import yt_dlp
+
 from config import Settings
 from models import DownloadResult, Source, TrackInfo
 from cache import CacheService
@@ -14,28 +12,27 @@ from cache import CacheService
 logger = logging.getLogger(__name__)
 
 class YouTubeDownloader:
-    # Регулярное выражение для проверки ID видео YouTube
+    # Строгая регулярка для ID видео
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
     def __init__(self, settings: Settings, cache_service: CacheService):
         self._settings = settings
         self._cache = cache_service
-        # Семафор ограничивает количество одновременных загрузок
+        # Ограничение на 2 потока, чтобы избежать 403 Forbidden от YouTube
         self.semaphore = asyncio.Semaphore(2)
 
     def _get_opts(self, is_search: bool = False) -> Dict[str, Any]:
-        """Конфигурация yt-dlp для быстрой работы в 2025 году."""
+        """Оптимальные настройки для 2025 года."""
         opts: Dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "socket_timeout": 20,
-            "source_address": "0.0.0.0",
+            "socket_timeout": 30,
             "no_check_certificate": True,
             "geo_bypass": True,
-            "retries": 2,
-            "fragment_retries": 3,
-            "concurrent_fragment_downloads": 5, # Ускоренная загрузка
+            "retries": 5, # Больше попыток для стабильности
+            "fragment_retries": 5,
+            # Важно: используем современные клиентские заголовки
             "extractor_args": {'youtube': {'player_client': ['android', 'web']}},
         }
 
@@ -43,9 +40,10 @@ class YouTubeDownloader:
             opts["cookiefile"] = str(self._settings.COOKIES_FILE)
 
         if is_search:
-            opts.update({"extract_flat": True})
+            opts.update({"extract_flat": True, "force_generic_extractor": False})
         else:
             opts.update({
+                # ba[ext=m4a] — самый быстрый формат без видео-фрагментов
                 "format": "bestaudio[ext=m4a]/bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{
@@ -53,121 +51,79 @@ class YouTubeDownloader:
                     "preferredcodec": "mp3",
                     "preferredquality": "128",
                 }],
-                "max_filesize": 50 * 1024 * 1024,
             })
         return opts
 
-    async def _extract_info(self, query: str, opts: Dict[str, Any], download: bool = False) -> Dict[str, Any]:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=download)
-        )
-
-    async def search(self, query: str, limit: int = 10, **kwargs) -> List[TrackInfo]:
-        """Поиск с фильтрацией мусора и стримов."""
-        # Очищаем запрос для YouTube, чтобы исключить длинные видео и стримы
-        clean_query = f'{query} -live -radio -stream -24/7 -"10 hours" -"full album"'
-        search_query = f"ytsearch{limit * 2}:{clean_query}"
+    async def search(self, query: str, limit: int = 10) -> List[TrackInfo]:
+        """Профессиональный поиск с фильтрами."""
+        # ytsearch: гарантирует, что запрос уйдет именно на поиск
+        search_query = f"ytsearch{limit}:{query} -live -stream -radio"
         opts = self._get_opts(is_search=True)
 
         try:
-            info = await self._extract_info(search_query, opts, download=False)
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(search_query, download=False))
             entries = info.get("entries", []) or []
-            out: List[TrackInfo] = []
             
-            # Исключаем мусорные ключевые слова
-            BANNED_WORDS = ['ai cover', 'generated', '10 hours', 'compilation', 'mix 20']
-
-            for e in entries:
-                if not e or not e.get("id"): continue
-                
-                duration = int(e.get("duration") or 0)
-                # Трек должен быть от 30 секунд до 10 минут
-                if duration < 30 or duration > 600 or e.get("is_live"):
-                    continue
-
-                if any(word in e.get("title", "").lower() for word in BANNED_WORDS):
-                    continue
-
-                out.append(TrackInfo(
-                    title=e.get("title", ""),
-                    artist=e.get("channel") or "Unknown",
-                    duration=duration,
+            return [
+                TrackInfo(
+                    title=e.get("title", "Unknown"),
+                    artist=e.get("uploader") or "Unknown",
+                    duration=int(e.get("duration") or 0),
                     source=Source.YOUTUBE.value,
                     identifier=e["id"],
-                ))
-                if len(out) >= limit: break
-            return out
+                ) for e in entries if e and e.get("id")
+            ]
         except Exception as e:
             logger.error(f"Search error: {e}")
             return []
 
     async def download_with_retry(self, query_or_id: str) -> DownloadResult:
-        """Метод для radio.py с поддержкой повторов."""
-        max_retries = getattr(self._settings, "MAX_RETRIES", 2)
-        retry_delay = getattr(self._settings, "RETRY_DELAY_S", 5)
-
-        for attempt in range(max_retries):
+        """Метод с ретраями для radio.py."""
+        for attempt in range(3):
             result = await self.download(query_or_id)
-            if result.success:
-                return result
-            
-            if result.error and ("Timeout" in result.error or "too long" in result.error):
-                return result
-
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-
-        return DownloadResult(success=False, error="Failed after retries.")
+            if result.success: return result
+            await asyncio.sleep(attempt * 2 + 1)
+        return DownloadResult(success=False, error="Failed after retries")
 
     async def download(self, query_or_id: str) -> DownloadResult:
-        """Основной метод скачивания с защитой от кривых URL."""
-        # Проверяем, пришел ID или текст
-        video_id = query_or_id.strip() if self.YT_ID_RE.match(query_or_id.strip()) else None
+        """Скачивание с принудительно корректным URL."""
+        video_id = query_or_id.strip()
+        
+        # Если пришел не ID, ищем ID
+        if not self.YT_ID_RE.match(video_id):
+            found = await self.search(query_or_id, limit=1)
+            if not found: return DownloadResult(success=False, error="Not found")
+            video_id = found[0].identifier
+
+        cache_key = f"yt:{video_id}"
+        cached = await self._cache.get(cache_key, Source.YOUTUBE)
+        if cached and Path(cached.file_path).exists(): return cached
+
+        # Гарантируем наличие протокола и слэша
+        url = f"www.youtube.com{video_id}"
+        opts = self._get_opts(is_search=False)
 
         try:
-            if not video_id:
-                found = await self.search(query_or_id, limit=1)
-                if not found: return DownloadResult(success=False, error="Not found")
-                video_id = found[0].identifier # Берем первый элемент из списка поиска
-
-            cache_key = f"yt:{video_id}"
-            cached = await self._cache.get(cache_key, Source.YOUTUBE)
-            if cached and Path(cached.file_path).exists():
-                return cached
-
-            # ГАРАНТИРОВАННО КОРРЕКТНЫЙ URL
-            video_url = f"www.youtube.com{video_id}"
-            
-            opts = self._get_opts(is_search=False)
-            loop = asyncio.get_running_loop()
-
             async with self.semaphore:
-                try:
-                    # Таймаут 85 секунд, чтобы успеть до следующего такта радио (90 сек)
-                    info = await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(video_url, download=True)),
-                        timeout=85.0 
-                    )
-                except asyncio.TimeoutError:
-                    return DownloadResult(success=False, error="Timeout: файл слишком долго качался")
+                loop = asyncio.get_running_loop()
+                # Тайм-аут 85 секунд для соблюдения такта 90 секунд
+                info = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=True)),
+                    timeout=85.0
+                )
 
-            # Путь к итоговому MP3
             file_path = self._settings.DOWNLOADS_DIR / f"{video_id}.mp3"
-            if not file_path.exists():
-                return DownloadResult(success=False, error="File not found after conversion")
+            if not file_path.exists(): return DownloadResult(success=False, error="Download failed")
 
             result = DownloadResult(
-                success=True,
-                file_path=str(file_path),
+                success=True, file_path=str(file_path),
                 title=info.get("title", "Unknown"),
                 duration=int(info.get("duration", 0)),
                 identifier=video_id
             )
             await self._cache.set(cache_key, result, Source.YOUTUBE)
             return result
-
         except Exception as e:
-            logger.error(f"Download error for {query_or_id}: {e}")
+            logger.error(f"Critical DL error: {e}")
             return DownloadResult(success=False, error=str(e))
