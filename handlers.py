@@ -30,24 +30,17 @@ logger = logging.getLogger("handlers")
 
 def setup_handlers(app: Application, radio: RadioManager, settings: Settings) -> None:
     
-    # --- Helper: Рекурсивный поиск запроса ---
     def get_query_from_catalog(path_str: str) -> str:
-        """Ищет реальный запрос по пути 'Рок|Метал|Хэви'."""
+        """Ищет реальный запрос по пути."""
         path = path_str.split('|')
         current = settings.MUSIC_CATALOG
-        
-        # Идем вглубь словаря
         for p in path[:-1]:
             current = current.get(p, {})
-            if not isinstance(current, dict):
-                return "best music mix" # Защита от сбоев
+            if not isinstance(current, dict): return "top 50 hits"
         
-        # Последний элемент - ключ конечного значения
         genre_name = path[-1]
         query = current.get(genre_name)
-        
-        if isinstance(query, dict):
-            return "best music mix" # Если вдруг указали на папку, а не трек
+        if isinstance(query, dict): return "top 50 hits"
         return str(query)
 
     # --- Commands ---
@@ -58,7 +51,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         
 Я — *Cyber Radio v7*.
 
-🎧 *Возможности:*
+🎧 *Фичи:*
 • Бесконечное радио без рекламы
 • Умный поиск (без мусора)
 • Стильный плеер (Winamp Style)
@@ -74,9 +67,10 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
         query = " ".join(context.args) if context.args else "random"
-        if query == "random": query = "best music mix"
         
-        # Удаляем команду пользователя для чистоты (если есть права)
+        # БЕЗОПАСНЫЙ ЗАПРОС (чтобы не качать миксы на 10 часов)
+        if query == "random": query = "top 50 global hits"
+        
         try: await update.message.delete()
         except: pass
         
@@ -84,18 +78,15 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)
-        # Отправляем сообщение, которое само исчезнет через 5 сек (чтобы не спамить)
         msg = await update.effective_message.reply_text("🛑 *Радио остановлено.*", parse_mode=ParseMode.MARKDOWN)
-        # Можно добавить удаление через job_queue, но это усложнит код. Оставим так.
 
     async def skip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.skip(update.effective_chat.id)
 
-    # --- Callbacks (Меню) ---
+    # --- Callbacks ---
 
     async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
-        # Обязательно отвечаем на callback, чтобы часики исчезли
         try: await query.answer()
         except: pass
         
@@ -103,7 +94,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         chat_id = query.message.chat_id
         chat_type = query.message.chat.type
 
-        # 1. Главное меню
         if data == "main_menu":
             await query.edit_message_text(
                 "💿 *Каталог жанров:*",
@@ -111,79 +101,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
                 reply_markup=get_main_menu_keyboard()
             )
         
-        # 2. Навигация по папкам (cat|HASH)
         elif data.startswith("cat|"):
             path_hash = data.removeprefix("cat|")
             path_str = resolve_path(path_hash)
             
-            if not path_str:
-                await query.edit_message_text("⚠️ Меню устарело. Нажмите /start.", reply_markup=None)
-                return
-
-            folder_name = path_str.split('|')[-1]
-            await query.edit_message_text(
-                f"📂 *{folder_name}*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=get_subcategory_keyboard(path_str)
-            )
-
-        # 3. Запуск жанра (play|HASH)
-        elif data.startswith("play|"):
-            path_hash = data.removeprefix("play|")
-            path_str = resolve_path(path_hash)
-            
-            if not path_str:
-                await query.edit_message_text("⚠️ Меню устарело.", reply_markup=None)
-                return
-
-            search_query = get_query_from_catalog(path_str)
-            
-            # Удаляем меню и запускаем радио
-            await query.message.delete()
-            await radio.start(chat_id, search_query, chat_type)
-
-        # 4. Управление плеером
-        elif data == "stop_radio":
-            await radio.stop(chat_id)
-            await query.edit_message_text("🛑 *Эфир завершен.*", parse_mode=ParseMode.MARKDOWN)
-
-        elif data == "skip_track":
-            # Не меняем текст сообщения, просто шлем уведомление
-            await query.answer("⏭️ Переключаю...", show_alert=False)
-            await radio.skip(chat_id)
-            
-        elif data == "play_random":
-            await query.message.delete()
-            await radio.start(chat_id, "best music hits 2024 mix", chat_type)
-
-        elif data == "noop":
-            await query.answer("Это просто кнопка :)")
-
-    # --- Inline Mode ---
-    
-    async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        query = update.inline_query.query.strip()
-        suggestions = ["Rock", "Lo-Fi", "Phonk", "Jazz"] if not query else [query]
-        results = []
-        
-        for term in suggestions:
-            results.append(InlineQueryResultArticle(
-                id=str(uuid4()),
-                title=f"📻 Play: {term.capitalize()}",
-                description="Нажмите для запуска радио",
-                input_message_content=InputTextMessageContent(f"/radio {term}"),
-                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3075/3075977.png"
-            ))
-        
-        await update.inline_query.answer(results, cache_time=0)
-
-    # --- Register ---
-    
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("menu", start_cmd))
-    app.add_handler(CommandHandler("radio", radio_cmd))
-    app.add_handler(CommandHandler("stop", stop_cmd))
-    app.add_handler(CommandHandler("skip", skip_cmd))
-    
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(InlineQueryHandler(inline_query))
+            # АВТО-ВОССТАНОВЛЕНИЕ: Если хэш протух, возвращаем в главное 
