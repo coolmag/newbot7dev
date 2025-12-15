@@ -1,27 +1,22 @@
 from pathlib import Path
-from typing import List, Optional, Dict
-
+from typing import List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # --- Обязательные переменные ---
+    # --- Основные настройки ---
     BOT_TOKEN: str
-    WEBHOOK_URL: str  # Полный URL до /telegram
-    BASE_URL: str     # https://your-domain (для WebApp ссылки)
-
-    # --- Необязательные переменные ---
+    WEBHOOK_URL: str
+    BASE_URL: str
     ADMIN_IDS: str = ""
     COOKIES_CONTENT: str = ""
 
     @property
     def ADMIN_ID_LIST(self) -> List[int]:
-        if not self.ADMIN_IDS:
-            return []
+        if not self.ADMIN_IDS: return []
         return [int(i.strip()) for i in self.ADMIN_IDS.split(",") if i.strip()]
 
     # --- Пути ---
@@ -31,104 +26,67 @@ class Settings(BaseSettings):
     LOG_FILE_PATH: Path = BASE_DIR / "bot.log"
     COOKIES_FILE: Path = BASE_DIR / "cookies.txt"
 
-    # --- Настройки логгера ---
+    # --- Настройки ---
     LOG_LEVEL: str = "INFO"
-
-    # --- Настройки загрузчика ---
     MAX_QUERY_LENGTH: int = 150
     DOWNLOAD_TIMEOUT_S: int = 120
-    MAX_CONCURRENT_DOWNLOADS: int = 2
-    
-    # --- Настройки для команды /play ---
-    PLAY_MAX_DURATION_S: int = 720    # 12 минут
-    PLAY_MIN_DURATION_S: int = 15     # 15 секунд
-    PLAY_MAX_FILE_SIZE_MB: int = 45
-
-    # --- Настройки повторных попыток ---
     MAX_RETRIES: int = 5
     RETRY_DELAY_S: float = 5.0
+    MAX_RESULTS: int = 30 # Увеличил выборку для разнообразия
 
-    # --- Настройки радио ---
-    RADIO_SOURCE: str = "youtube"
-    RADIO_MAX_DURATION_S: int = 600
-    RADIO_MIN_DURATION_S: int = 60
-    RADIO_MIN_VIEWS: Optional[int] = None      # ← Убрал строгий фильтр
-    RADIO_MIN_LIKES: Optional[int] = None      # ← Убрал строгий фильтр  
-    RADIO_MIN_LIKE_RATIO: Optional[float] = None  # ← Убрал строгий фильтр
-    MAX_RESULTS: int = 20  # ✅ ДОБАВЛЕНО
+    # ==========================================
+    # 🎵 МУЗЫКАЛЬНАЯ ИЕРАРХИЯ (КАТАЛОГ)
+    # ==========================================
+    # Формат: "Название кнопки": "Поисковый запрос для YouTube"
+    # Если значение - словарь, это подкатегория.
     
-    RADIO_GENRES: List[str] = [
-        # --- Рок ---
-        "rock", "classic rock", "psychedelic rock", "indie rock", "alternative rock", "hard rock", 
-        "post-punk", "metal", "industrial", "gothic rock", "punk rock", "progressive rock",
-        "pop rock", "grunge", "britpop", "emo",
-        "rock and roll",
-
-        # --- Поп и танцевальная ---
-        "pop", "new wave", "disco", "r&b", "traditional pop", "synth-pop", "latin pop", "k-pop",
-        
-        # --- Соул, Фанк, Грув ---
-        "soul", "funk", "soul groove", "jazz-funk", "rare groove", "modern soul", "neo-soul",
-        
-        # --- Джаз и Блюз ---
-        "jazz", "blues", "doo-wop",
-
-        # --- Электроника (общая) ---
-        "electronic", "ambient", "chillwave", "lofi hip-hop", "downtempo", "edm (electronic dance music)",
-        "trap", "hyperpop", "synthwave",
-
-        # --- Танцевальная электроника (House, Techno и др.) ---
-        "house", "deep house", "deep tech house", "progressive house", "tech house", "chill house", "tropical house",
-        "techno", "minimal techno", "trance", "drum and bass", "dubstep", "uk garage", 
-        "breakbeat", "hardstyle", "phonk", "future bass", "ambient house", "trip-hop",
-
-        # --- DJ-сеты и ремиксы ---
-        "extended mix", "club mix", "dj set",
-        "hardwell", "armin van buuren", "tiesto", "david guetta", "daft punk",
-        
-        # --- Хип-хоп / Рэп ---
-        "hip-hop", "rap", "drill",
-        
-        # --- Классика, фолк и этника ---
-        "classical", "orchestral", "soundtrack", "folk", "country", "reggae", "latin", "world music", "afrobeats", "reggaeton", "ska",
-
-        # --- Русскоязычные (поп и рок) ---
-        "русская поп-музыка", "русский рок", "русский панк-рок", "русский пост-панк",
-
-        # --- Русскоязычные (хип-хоп) ---
-        "русский рэп", "русский хип-хоп", "кальянный рэп",
-
-        # --- Советская эстрада, джаз, грув ---
-        "советский грув", "советский фанк", "советский джаз", "советская эстрада",
-
-        # --- Русскоязычные (авторское и шансон) ---
-        "шансон", "бардовская песня", "авторская песня", "русские романсы",
-        
-        # --- Дополнительные ---
-        "bedroom pop"
-    ]
-
-    RADIO_MOODS: Dict[str, List[str]] = {
-        # Новые "зумерские" настроения
-        "чилл": ["lofi hip-hop", "chillwave", "downtempo", "ambient", "trip-hop", "bedroom pop"],
-        "вайб": ["soul", "r&b", "neo-soul", "jazz-funk", "deep house", "bedroom pop"],
-        "движ": ["hip-hop", "drill", "phonk", "trap", "hardstyle", "drum and bass", "k-pop"],
-        "грув": ["funk", "disco", "soul groove", "rare groove", "jazz-funk"],
-        
-        # Обновленные старые
-        "энергия": ["pop", "house", "edm", "progressive house", "hard rock", "эстрада 80-90х"],
-        "грусть": ["blues", "indie rock", "alternative rock", "emo", "post-punk", "русские романсы"],
-        "фокус": ["ambient", "minimal techno", "lofi hip-hop", "soundtrack"],
-        "драйв": ["hard rock", "metal", "phonk", "techno", "trance", "punk rock"],
-        "ностальгия": ["synthwave", "retrowave", "classic rock", "советская эстрада", "new wave"],
-        
-        # Специальные
-        "русское": ["русская поп-музыка", "русский рок", "русский рэп", "кальянный рэп", "советский джаз", "советская эстрада"]
+    MUSIC_CATALOG: Dict[str, Any] = {
+        "🎸 Рок и Метал": {
+            "🤘 Classic Rock": "best classic rock hits 70s 80s",
+            "🎸 Alt Rock": "alternative rock hits",
+            "⚫ Metal": "heavy metal best songs",
+            "😡 Punk": "punk rock classic",
+            "🌫 Grunge": "best grunge songs",
+            "🌑 Indie Rock": "indie rock hits",
+            "🇷🇺 Русский Рок": "лучший русский рок хиты",
+            "☠️ Metalcore": "metalcore best songs"
+        },
+        "🎹 Электроника": {
+            "🏠 House": "best house music 2024",
+            "💊 Techno": "techno music playlist",
+            "🔊 Drum & Bass": {
+                "🚀 Mainstream DnB": "drum and bass hits",
+                "🌴 Liquid DnB": "liquid drum and bass",
+                "🦁 Jungle": "old school jungle music",
+                "🧠 Neurofunk": "neurofunk mix"
+            },
+            "🌀 Trance": "vocal trance classic",
+            "👾 Dubstep": "dubstep hits classic",
+            "🌌 Synthwave": "synthwave retrowave mix"
+        },
+        "🎤 Хип-Хоп": {
+            "🇺🇸 Old School": "90s hip hop hits",
+            "🔫 Trap": "best trap music",
+            "🏎 Phonk": "phonk drift music",
+            "🇷🇺 Русский Рэп": "лучший русский рэп",
+            "🚬 Кальянный": "кальянный рэп хиты"
+        },
+        "🕰 По Эпохам": {
+            "🕺 50s Rock'n'Roll": "50s rock n roll hits",
+            "☮️ 60s Hippie": "60s music hits",
+            "🕺 70s Disco/Rock": "70s hits best songs",
+            "💾 80s Hits": "80s greatest hits",
+            "📼 90s Eurodance": "90s eurodance hits",
+            "🧢 2000s Pop/Rock": "2000s hits"
+        },
+        "✨ Вайб / Настроение": {
+            "☕️ Lo-Fi / Study": "lofi hip hop radio",
+            "🛌 Sleep / Ambient": "ambient music for sleep",
+            "💪 Gym / Workout": "gym workout music",
+            "🚗 Night Drive": "night drive music",
+            "🎷 Jazz Bar": "smooth jazz instrumental"
+        }
     }
-
-    # --- Настройки кэша ---
-    CACHE_TTL_DAYS: int = 7
-
 
 def get_settings() -> Settings:
     return Settings()
