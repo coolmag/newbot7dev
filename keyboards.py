@@ -3,45 +3,54 @@ from telegram.constants import ChatType
 from config import get_settings
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру главного меню."""
+    """Главное меню."""
     keyboard = [
         [
-            InlineKeyboardButton("🎵 Радио по жанру", callback_data="radio_genre"),
-            InlineKeyboardButton("⭐️ Избранное", callback_data="favorites"),
+            InlineKeyboardButton("🎸 Выбрать жанр", callback_data="radio_genre"),
+            InlineKeyboardButton("🎲 Случайный поток", callback_data="genre_random"),
         ],
+        # [InlineKeyboardButton("⭐️ Моя коллекция", callback_data="favorites")], # Можно раскомментировать, если реализуешь
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_genre_keyboard() -> InlineKeyboardMarkup:
-    """Динамически создает клавиатуру для выбора жанра радио."""
+    """Клавиатура жанров (сетка 2xN)."""
     settings = get_settings()
+    # Делаем первую букву заглавной
     buttons = [
         InlineKeyboardButton(
-            text=genre.capitalize(),
+            text=f"📻 {genre.title()}",
             callback_data=f"genre_{genre}"
         )
         for genre in settings.RADIO_GENRES
     ]
-    # Группируем кнопки по 3 в ряд для лучшего вида
-    keyboard = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
-    keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")])
+    # Сетка 2 кнопки в ряд
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_status_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру для сообщения о статусе."""
+def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для Dashboard (активного радио).
+    Самая большая кнопка - WebApp. Снизу управление.
+    """
     webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
+    
+    # Адаптация для лички и групп
     if chat_type == ChatType.PRIVATE:
-        player_button = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
+        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLEYER ✨", web_app=WebAppInfo(url=webapp_url))
     else:
-        player_button = InlineKeyboardButton("🎧 Открыть плеер", url=webapp_url)
-        
+        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLEYER ✨", url=webapp_url)
+
     keyboard = [
+        [webapp_btn], # Огромная кнопка на всю ширину
         [
-            InlineKeyboardButton("⏭️", callback_data="skip_track"),
-            InlineKeyboardButton("⏹️", callback_data="stop_radio"),
+            InlineKeyboardButton("⏮️", callback_data="noop"), # Декоративная (или можно сделать replay)
+            InlineKeyboardButton("⏹️ Стоп", callback_data="stop_radio"),
+            InlineKeyboardButton("⏭️ Скип", callback_data="skip_track"),
         ],
         [
-            player_button
+            InlineKeyboardButton("📂 Меню", callback_data="main_menu")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

@@ -1,221 +1,150 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
+
 from telegram import (
     Update,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
-    WebAppInfo,
-    CallbackQuery,
+    InlineKeyboardButton,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    WebAppInfo
 )
-from telegram.constants import ChatType
+from telegram.constants import ChatType, ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
     CallbackQueryHandler,
+    InlineQueryHandler,
 )
 from telegram.error import BadRequest
 
 from radio import RadioManager
 from config import Settings
-from keyboards import get_main_menu_keyboard, get_genre_keyboard, get_status_keyboard
+from keyboards import get_main_menu_keyboard, get_genre_keyboard, get_dashboard_keyboard
 
 logger = logging.getLogger("handlers")
 
-
-async def safe_answer_callback(query: CallbackQuery, text: str | None = None) -> None:
-    """Безопасно отвечает на callback query, игнорируя устаревшие запросы."""
-    try:
-        await query.answer(text)
-    except BadRequest as e:
-        msg = str(e).lower()
-        if any(x in msg for x in ["too old", "timeout expired", "invalid"]):
-            logger.debug(f"Ignored stale callback query: {e}")
-            return
-        raise
-
-
-def player_markup(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
-    """Возвращает кнопку плеера, адаптированную под тип чата."""
-    webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
-    
-    if chat_type == ChatType.PRIVATE:
-        btn = InlineKeyboardButton("🎧 Открыть плеер", web_app=WebAppInfo(url=webapp_url))
-    else:
-        btn = InlineKeyboardButton("🎧 Открыть плеер", url=webapp_url)
-    
-    return InlineKeyboardMarkup([[btn]])
-
-
 def setup_handlers(app: Application, radio: RadioManager, settings: Settings) -> None:
-    """Регистрирует все обработчики команд и callback'ов."""
     
-    # ─────────────────────────────────────────────────────────────
-    # Вспомогательные функции
-    # ─────────────────────────────────────────────────────────────
-    
-    def get_player_markup(chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
-        """Shortcut для создания player_markup с текущими настройками."""
-        return player_markup(settings.BASE_URL, chat_type, chat_id)
-
-    async def send_status(chat_id: int, chat_type: str, reply_func) -> None:
-        """Общая логика отправки статуса радио."""
-        st = radio.status()
-        session = st["sessions"].get(str(chat_id))
-        
-        if not session:
-            await reply_func(
-                "Радио не запущено.",
-                reply_markup=get_player_markup(chat_type, chat_id)
-            )
-            return
-
-        current = session.get("current")
-        if current:
-            text = f"""🎶 *Сейчас в эфире:*
-*{current.get('title', 'N/A')}*
-_{current.get('artist', 'N/A')}_
-
-🎧 *Запрос:* `{session['query']}`
-⌛ *В очереди:* `{session['playlist_len']}` треков"""
-            await reply_func(
-                text,
-                parse_mode="Markdown",
-                reply_markup=get_status_keyboard(settings.BASE_URL, chat_type, chat_id)
-            )
-        else:
-            await reply_func(
-                "⏳ Подбираю следующий трек...",
-                reply_markup=get_player_markup(chat_type, chat_id)
-            )
-
-    # ─────────────────────────────────────────────────────────────
-    # Command Handlers
-    # ─────────────────────────────────────────────────────────────
+    # --- Commands ---
 
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        chat = update.effective_chat
-        await update.effective_message.reply_text(
-            f"""Привет! Я твой музыкальный бот.
+        """Приветствие + Меню."""
+        user = update.effective_user.first_name
+        text = f"""👋 *Привет, {user}!*
+        
+Я — *Cyber Radio v7*. Я превращу этот чат в бесконечную радиостанцию.
 
-Используй /menu, чтобы открыть главное меню, или /radio <запрос>, чтобы сразу запустить радио.""",
-            reply_markup=get_player_markup(chat.type, chat.id)
-        )
+🎧 *Возможности:*
+• Бесконечный поток музыки без рекламы
+• WebApp плеер с визуализацией
+• Поддержка фонового режима
 
-    async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+Нажми кнопку ниже, чтобы начать 👇"""
+        
         await update.effective_message.reply_text(
-            "Главное меню:",
-            reply_markup=get_main_menu_keyboard(),
-        )
-
-    async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        uid = update.effective_user.id if update.effective_user else 0
-        if uid not in settings.ADMIN_ID_LIST:
-            await update.effective_message.reply_text("⛔ Нет доступа.")
-            return
-        await update.effective_message.reply_text(
-            "👑 **Админ-панель**", 
-            parse_mode="Markdown"
-        )
-
-    async def player_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        chat = update.effective_chat
-        await update.effective_message.reply_text(
-            "Нажмите кнопку ниже, чтобы открыть веб-плеер:",
-            reply_markup=get_player_markup(chat.type, chat.id),
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_menu_keyboard()
         )
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Быстрый запуск: /radio rock."""
         chat = update.effective_chat
-        query = " ".join(context.args).strip() if context.args else "rock hits"
+        query = " ".join(context.args) if context.args else "random"
         
+        if query == "random":
+            query = "best music mix"
+            
         await radio.start(chat.id, query, chat.type)
-        await update.effective_message.reply_text(
-            f"✅ Радио запущено: {query}",
-            reply_markup=get_player_markup(chat.type, chat.id)
-        )
+        # Dashboard отправится внутри radio.start, здесь ничего слать не надо
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)
-        await update.effective_message.reply_text("⏹ Радио остановлено.")
 
     async def skip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.skip(update.effective_chat.id)
-        await update.effective_message.reply_text("⏭ Ок, пропускаю…")
 
-    async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        chat = update.effective_chat
-        await send_status(chat.id, chat.type, update.effective_message.reply_text)
-
-    # ─────────────────────────────────────────────────────────────
-    # Callback Query Handler
-    # ─────────────────────────────────────────────────────────────
+    # --- Callbacks (Кнопки) ---
 
     async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
-        await safe_answer_callback(query)
+        try: await query.answer()
+        except: pass
         
         data = query.data
-        chat = query.message.chat
-        chat_id = chat.id
-        chat_type = chat.type
+        chat_id = query.message.chat_id
+        chat_type = query.message.chat.type
 
-        match data:
-            case "main_menu":
-                await query.edit_message_text(
-                    text="Главное меню:",
-                    reply_markup=get_main_menu_keyboard()
-                )
-            
-            case "radio_genre":
-                await query.edit_message_text(
-                    text="Выберите жанр:",
-                    reply_markup=get_genre_keyboard()
-                )
-            
-            case "skip_track":
-                await radio.skip(chat_id)
-                await query.edit_message_text(text="⏭️ Пропускаю...")
-            
-            case "stop_radio":
-                await radio.stop(chat_id)
-                await query.edit_message_text(text="⏹️ Радио остановлено.")
-            
-            case "status":
-                try:
-                    await query.message.delete()
-                except BadRequest:
-                    pass
-                await send_status(chat_id, chat_type, chat.send_message)
-            
-            case _ if data.startswith("genre_"):
-                genre = data.removeprefix("genre_")
-                await radio.start(chat_id, genre, chat_type)
-                await query.edit_message_text(
-                    text=f"✅ Радио запущено: {genre}",
-                    reply_markup=get_player_markup(chat_type, chat_id)
-                )
-            
-            case _:
-                logger.warning(f"Unknown callback data: {data}")
+        if data == "main_menu":
+            await query.edit_message_text(
+                "💿 *Выбери волну:*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_menu_keyboard()
+            )
+        
+        elif data == "radio_genre":
+            await query.edit_message_text(
+                "🎹 *Доступные жанры:*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_genre_keyboard()
+            )
 
-    # ─────────────────────────────────────────────────────────────
-    # Регистрация обработчиков
-    # ─────────────────────────────────────────────────────────────
-    
-    commands = [
-        ("start", start_cmd),
-        ("menu", menu_cmd),
-        ("admin", admin_cmd),
-        ("player", player_cmd),
-        ("radio", radio_cmd),
-        ("stop", stop_cmd),
-        ("skip", skip_cmd),
-        ("status", status_cmd),
-    ]
-    
-    for name, handler in commands:
-        app.add_handler(CommandHandler(name, handler))
+        elif data.startswith("genre_"):
+            genre = data.replace("genre_", "")
+            if genre == "random": 
+                genre = "best music 2024"
+            
+            # Удаляем меню, чтобы не мешало дашборду
+            await query.message.delete()
+            await radio.start(chat_id, genre, chat_type)
+
+        elif data == "stop_radio":
+            await radio.stop(chat_id)
+            await query.edit_message_text("🛑 *Эфир завершен.*", parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "skip_track":
+            await query.message.edit_text("⏭️ *Ищем следующий трек...*", parse_mode=ParseMode.MARKDOWN)
+            await radio.skip(chat_id)
+
+    # --- Inline Mode (Поиск в любом чате) ---
+
+    async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Обработка @BotName text"""
+        query = update.inline_query.query.strip()
+        
+        if not query:
+            # Если пусто, предлагаем популярные
+            suggestions = ["Rock", "Lo-Fi", "Pop", "Jazz"]
+        else:
+            suggestions = [query]
+
+        results = []
+        for term in suggestions:
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(uuid4()),
+                    title=f"📻 Запустить радио: {term.capitalize()}",
+                    description="Нажмите, чтобы включить бесконечный поток этой музыки",
+                    input_message_content=InputTextMessageContent(
+                        f"/radio {term}" # Это отправится в чат и триггернет команду
+                    ),
+                    thumbnail_url="https://cdn-icons-png.flaticon.com/512/3075/3075977.png"
+                )
+            )
+
+        await update.inline_query.answer(results, cache_time=0)
+
+    # --- Registration ---
+
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("menu", start_cmd)) # Алиас
+    app.add_handler(CommandHandler("radio", radio_cmd))
+    app.add_handler(CommandHandler("stop", stop_cmd))
+    app.add_handler(CommandHandler("skip", skip_cmd))
     
     app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(InlineQueryHandler(inline_query))
