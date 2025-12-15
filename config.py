@@ -43,46 +43,83 @@ class Settings(BaseSettings):
     PLAY_MAX_DURATION_S: int = 900
     PLAY_MAX_FILE_SIZE_MB: int = 50
 
+    # Fallback
+    RADIO_GENRES: List[str] = ["rock", "pop", "jazz"] 
+
     # ==========================================
-    # 🎵 МУЗЫКАЛЬНАЯ ИЕРАРХИЯ (КАТАЛОГ)
+    # 🎵 ПОЛНЫЙ МУЗЫКАЛЬНЫЙ КАТАЛОГ
     # ==========================================
     
-    # Fallback список (для совместимости)
-    RADIO_GENRES: List[str] = [
-        "rock", "pop", "jazz", "lofi", "phonk", "metal", 
-        "house", "techno", "drum and bass", "hip hop"
-    ]
-
     MUSIC_CATALOG: Dict[str, Any] = {
         "🎸 Рок и Метал": {
             "🤘 Classic Rock": "best classic rock hits 70s 80s",
             "🎸 Alt Rock": "alternative rock hits",
-            "⚫ Metal": "heavy metal best songs",
-            "😡 Punk": "punk rock classic",
-            "🌫 Grunge": "best grunge songs",
+            "🌫 Grunge": "best grunge songs nirvana pearl jam",
             "🌑 Indie Rock": "indie rock hits",
             "🇷🇺 Русский Рок": "лучший русский рок хиты",
-            "☠️ Metalcore": "metalcore best songs"
+            "⚫ Metal": {
+                "🤘 Heavy Metal": "heavy metal classic hits",
+                "🔥 Thrash Metal": "thrash metal metallica megadeth",
+                "☠️ Death Metal": "death metal mix",
+                "🖤 Black Metal": "old school black metal",
+                "🎼 Symphonic Metal": "symphonic metal hits",
+                "🛠 Industrial": "industrial metal rammstein",
+                "💥 Nu Metal": "nu metal hits linkin park korn"
+            },
+            "😡 Punk": {
+                "🇬🇧 Classic Punk": "sex pistols the clash",
+                "🛹 Pop Punk": "pop punk hits blink-182",
+                "🇷🇺 Русский Панк": "король и шут гражданская оборона",
+                "🏴 Post-Punk": "soviet post punk doomer"
+            }
         },
         "🎹 Электроника": {
-            "🏠 House": "best house music 2024",
-            "💊 Techno": "techno music playlist",
-            "🔊 Drum & Bass": {
-                "🚀 Mainstream DnB": "drum and bass hits",
-                "🌴 Liquid DnB": "liquid drum and bass",
-                "🦁 Jungle": "old school jungle music",
-                "🧠 Neurofunk": "neurofunk mix"
+            "🏠 House": {
+                "☀️ Deep House": "deep house vocal chill",
+                "🎹 Tech House": "tech house mix 2024",
+                "🕺 Funky House": "funky house disco",
+                "🌇 Progressive": "progressive house classic",
+                "🔊 Bass House": "bass house mix"
             },
-            "🌀 Trance": "vocal trance classic",
-            "👾 Dubstep": "dubstep hits classic",
-            "🌌 Synthwave": "synthwave retrowave mix"
+            "🌀 Trance": {
+                "🎤 Vocal Trance": "vocal trance classics asot",
+                "🌅 Progressive": "progressive trance mix",
+                "🕉 Psy-Trance": "psytrance goa mix",
+                "🍄 Goa Trance": "old school goa trance",
+                "⏫ Uplifting": "uplifting trance 138 bpm"
+            },
+            "💊 Techno": {
+                "🏭 Industrial": "hard industrial techno",
+                "⛏ Hard Techno": "hard techno schranz",
+                "🧠 Minimal": "minimal techno trippy",
+                "🧪 Acid": "acid techno 303",
+                "🎹 Melodic": "melodic techno afterlife"
+            },
+            "🔊 Drum & Bass": {
+                "🌴 Liquid": "liquid drum and bass vocal",
+                "🧠 Neurofunk": "neurofunk dnb mix",
+                "🦁 Jungle": "ragga jungle old school",
+                "🌑 Darkstep": "darkstep dnb techstep",
+                "🏃 Jump Up": "jump up dnb mix"
+            },
+            "🌌 Synth & Wave": {
+                "🚗 Synthwave": "synthwave retrowave mix",
+                "📼 Vaporwave": "vaporwave chill",
+                "🌆 Cyberpunk": "cyberpunk midtempo darksynth"
+            },
+            "👾 Dubstep": "dubstep classic skrillex"
         },
         "🎤 Хип-Хоп": {
-            "🇺🇸 Old School": "90s hip hop hits",
-            "🔫 Trap": "best trap music",
-            "🏎 Phonk": "phonk drift music",
-            "🇷🇺 Русский Рэп": "лучший русский рэп",
-            "🚬 Кальянный": "кальянный рэп хиты"
+            "🇺🇸 Old School": "90s hip hop east coast west coast",
+            "🔫 Trap": "best trap music 2024",
+            "🏎 Phonk": "drift phonk house",
+            "☁️ Cloud Rap": "cloud rap yung lean",
+            "🎹 Lo-Fi Hip Hop": "lofi hip hop beats",
+            "🇷🇺 Наш Рэп": {
+                "🏙 Олдскул": "русский рэп олдскул",
+                "🚬 Кальянный": "кальянный рэп хиты",
+                "🆕 Новая Школа": "русский трэп новинки"
+            }
         },
         "🕰 По Эпохам": {
             "🕺 50s Rock'n'Roll": "50s rock n roll hits",
@@ -90,17 +127,16 @@ class Settings(BaseSettings):
             "🕺 70s Disco/Rock": "70s hits best songs",
             "💾 80s Hits": "80s greatest hits",
             "📼 90s Eurodance": "90s eurodance hits",
-            "🧢 2000s Pop/Rock": "2000s hits"
+            "🧢 2000s Hits": "2000s pop hits"
         },
-        "✨ Вайб / Настроение": {
+        "✨ Чилл / Вайб": {
             "☕️ Lo-Fi / Study": "lofi hip hop radio",
-            "🛌 Sleep / Ambient": "ambient music for sleep",
-            "💪 Gym / Workout": "gym workout music",
-            "🚗 Night Drive": "night drive music",
-            "🎷 Jazz Bar": "smooth jazz instrumental"
+            "🛌 Ambient": "ambient music for sleep",
+            "🎷 Smooth Jazz": "smooth jazz instrumental",
+            "🍹 Lounge": "ibiza lounge chillout",
+            "🧘 Meditation": "meditation music 432hz"
         }
     }
 
-# ВАЖНО: Эта функция должна быть в конце файла!
 def get_settings() -> Settings:
     return Settings()
