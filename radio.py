@@ -218,37 +218,4 @@ class RadioManager:
                 track = s.playlist.popleft()
                 s.current = track
                 
-                await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
-                
-                if s.audio_file_path and s.audio_file_path.exists():
-                    try: s.audio_file_path.unlink()
-                    except: pass
-                
-                result = await self._downloader.download_with_retry(track.identifier)
-                
-                if not result.success:
-                    logger.warning(f"Download failed: {result.error}")
-                    if "большой" in str(result.error) or "too large" in str(result.error):
-                         await self._update_dashboard(s, status="⚠️ Слишком большой файл, пропуск...")
-                    else:
-                         await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
-                    await asyncio.sleep(1)
-                    continue 
-                
-                s.audio_file_path = Path(result.file_path)
-                s.played_ids.add(track.identifier)
-                
-                if len(s.played_ids) > 300:
-                    s.played_ids = set(list(s.played_ids)[-100:])
-
-                await self._update_dashboard(s, status="▶️ Pre-buffering...")
-                
-                try:
-                    with open(s.audio_file_path, "rb") as f:
-                        await self._bot.send_audio(
-                            chat_id=s.chat_id,
-                            audio=f,
-                            title=track.title,
-                            performer=track.artist,
-                            duration=track.duration,
-                            
+                await 
