@@ -34,7 +34,7 @@ class YouTubeDownloader:
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "socket_timeout": 15,  # Быстрый таймаут, если сервер тупит
+            "socket_timeout": 15,  # Быстрый таймаут
             "source_address": "0.0.0.0",
             "no_check_certificate": True,
             "prefer_insecure": True,
@@ -52,7 +52,7 @@ class YouTubeDownloader:
         if is_search:
             opts["extract_flat"] = True
         else:
-            # Настройки для скачивания файла
+            # Настройки для скачивания файла: только аудио, малый размер
             opts.update({
                 # Приоритет: m4a (самый легкий) -> webm -> любой аудио
                 "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
@@ -99,7 +99,7 @@ class YouTubeDownloader:
             BANNED_WORDS = [
                 'ai cover', 'suno', 'udio', 'ai version', 
                 'ии кавер', 'сгенерировано ии', 'ai generated',
-                '10 hours', '1 hour', 'mix 2025' # Фильтруем длинные миксы по названию
+                '10 hours', '1 hour', 'mix 2025'
             ]
 
             for e in entries:
@@ -116,10 +116,7 @@ class YouTubeDownloader:
 
                 duration = int(e.get("duration") or 0)
 
-                # Дополнительная проверка длительности при поиске
-                if max_duration is not None and duration > max_duration:
-                    continue
-                # Игнорируем слишком длинные (больше 15 мин) даже если не задан лимит
+                # Игнорируем слишком длинные (больше 15 мин)
                 if duration > 900: 
                     continue
 

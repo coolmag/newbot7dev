@@ -60,7 +60,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             query = "best music mix"
             
         await radio.start(chat.id, query, chat.type)
-        # Dashboard отправится внутри radio.start, здесь ничего слать не надо
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)

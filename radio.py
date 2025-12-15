@@ -17,7 +17,7 @@ from telegram.error import TelegramError, BadRequest
 from config import Settings
 from models import TrackInfo
 from youtube import YouTubeDownloader
-from keyboards import get_dashboard_keyboard
+from keyboards import get_dashboard_keyboard, get_track_keyboard
 
 logger = logging.getLogger("radio")
 
@@ -200,7 +200,6 @@ class RadioManager:
 """
 
     async def _fetch_playlist(self, s: RadioSession) -> bool:
-        # Разбавляем запрос для разнообразия
         q_variants = [s.query, f"{s.query} music", f"best {s.query}"]
         actual_query = random.choice(q_variants)
         
@@ -211,7 +210,6 @@ class RadioManager:
         )
         
         if tracks:
-            # Фильтруем повторы
             new_tracks = [t for t in tracks if t.identifier not in s.played_ids]
             random.shuffle(new_tracks)
             s.playlist.extend(new_tracks)
@@ -223,13 +221,11 @@ class RadioManager:
         """Главный цикл радио."""
         try:
             while not s.stop_event.is_set():
-                # 1. Пополнение плейлиста
                 if len(s.playlist) < 3:
                     await self._update_dashboard(s, status="📡 Поиск частот...")
                     if not await self._fetch_playlist(s):
                         s.fails_in_row += 1
                         if s.fails_in_row >= 3:
-                            # Полный провал поиска - меняем запрос на рандомный жанр
                             s.query = random.choice(self._settings.RADIO_GENRES)
                             s.fails_in_row = 0
                             logger.warning(f"[{s.chat_id}] Search failed, switching to {s.query}")
@@ -241,15 +237,12 @@ class RadioManager:
                     await asyncio.sleep(5)
                     continue
 
-                # 2. Выбор трека
                 track = s.playlist.popleft()
                 s.current = track
                 s.skip_event.clear()
                 
-                # 3. Скачивание
                 await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
                 
-                # Удаляем старый файл
                 if s.audio_file_path and s.audio_file_path.exists():
                     try: s.audio_file_path.unlink()
                     except: pass
@@ -258,27 +251,22 @@ class RadioManager:
                 
                 if not result.success:
                     logger.warning(f"Download failed: {result.error}")
-                    # Если файл слишком большой или ошибка формата - просто идем дальше
                     if "большой" in str(result.error) or "too large" in str(result.error):
                          await self._update_dashboard(s, status="⚠️ Слишком большой файл, пропуск...")
                     else:
                          await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
-                    
                     await asyncio.sleep(1)
                     continue 
                 
                 s.audio_file_path = Path(result.file_path)
                 s.played_ids.add(track.identifier)
                 
-                # Ограничиваем историю
                 if len(s.played_ids) > 300:
                     s.played_ids = set(list(s.played_ids)[-100:])
 
-                # 4. Эфир (Отправка файла + Обновление дашборда)
                 await self._update_dashboard(s, status="▶️ Pre-buffering...")
                 
                 try:
-                    # Отправляем аудио файл
                     with open(s.audio_file_path, "rb") as f:
                         await self._bot.send_audio(
                             chat_id=s.chat_id,
@@ -286,18 +274,18 @@ class RadioManager:
                             title=track.title,
                             performer=track.artist,
                             duration=track.duration,
-                            caption=f"#{s.query.replace(' ', '_')}"
+                            caption=f"#{s.query.replace(' ', '_')}",
+                            # === КНОПКА ПОД ТРЕКОМ ===
+                            reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    # Сразу после отправки обновляем дашборд
                     await self._update_dashboard(s)
                     
-                    # 5. Ожидание конца трека или скипа
                     try:
                         wait_time = float(track.duration) if track.duration > 0 else 180.0
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                     except asyncio.TimeoutError:
-                        pass # Трек доиграл
+                        pass 
                     
                 except Exception as e:
                     logger.error(f"Playback error: {e}")

@@ -9,7 +9,6 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🎸 Выбрать жанр", callback_data="radio_genre"),
             InlineKeyboardButton("🎲 Случайный поток", callback_data="genre_random"),
         ],
-        # [InlineKeyboardButton("⭐️ Моя коллекция", callback_data="favorites")], # Можно раскомментировать, если реализуешь
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -32,20 +31,18 @@ def get_genre_keyboard() -> InlineKeyboardMarkup:
 def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура для Dashboard (активного радио).
-    Самая большая кнопка - WebApp. Снизу управление.
     """
     webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
     
-    # Адаптация для лички и групп
     if chat_type == ChatType.PRIVATE:
-        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLEYER ✨", web_app=WebAppInfo(url=webapp_url))
+        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLAYER ✨", web_app=WebAppInfo(url=webapp_url))
     else:
-        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLEYER ✨", url=webapp_url)
+        webapp_btn = InlineKeyboardButton("✨ ОТКРЫТЬ CYBER PLAYER ✨", url=webapp_url)
 
     keyboard = [
-        [webapp_btn], # Огромная кнопка на всю ширину
+        [webapp_btn],
         [
-            InlineKeyboardButton("⏮️", callback_data="noop"), # Декоративная (или можно сделать replay)
+            InlineKeyboardButton("⏮️", callback_data="noop"), 
             InlineKeyboardButton("⏹️ Стоп", callback_data="stop_radio"),
             InlineKeyboardButton("⏭️ Скип", callback_data="skip_track"),
         ],
@@ -54,3 +51,11 @@ def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> Inlin
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def get_track_keyboard(base_url: str, chat_id: int) -> InlineKeyboardMarkup:
+    """
+    Маленькая кнопка, которая крепится под каждым аудио-файлом.
+    """
+    webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"
+    btn = InlineKeyboardButton("🎧 Открыть плеер", url=webapp_url)
+    return InlineKeyboardMarkup([[btn]])
