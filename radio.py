@@ -110,6 +110,7 @@ class RadioManager:
 
     async def skip(self, chat_id: int):
         if session := self._sessions.get(chat_id):
+            logger.info(f"[{chat_id}] Skip requested")
             session.skip_event.set()
             await self._update_dashboard(session, status="⏭️ Переключение...")
 
@@ -197,13 +198,14 @@ class RadioManager:
     async def _radio_loop(self, s: RadioSession):
         try:
             while not s.stop_event.is_set():
-                s.skip_event.clear()
+                s.skip_event.clear() # Сбрас флага перед каждым треком
 
+                # 1. Пополнение плейлиста
                 if len(s.playlist) < 3:
                     await self._update_dashboard(s, status="📡 Поиск частот...")
                     if not await self._fetch_playlist(s):
                         s.fails_in_row += 1
-                        if s.fails_in_row >= 3:
+                        if s.fails_in_row >= 2:
                             s.query = random.choice(self._settings.RADIO_GENRES)
                             s.fails_in_row = 0
                             logger.warning(f"[{s.chat_id}] Search failed, switching to {s.query}")
@@ -215,23 +217,23 @@ class RadioManager:
                     await asyncio.sleep(5)
                     continue
 
+                # 2. Берем трек
                 track = s.playlist.popleft()
                 s.current = track
                 
                 await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
                 
+                # Чистим старый файл
                 if s.audio_file_path and s.audio_file_path.exists():
                     try: s.audio_file_path.unlink()
                     except: pass
                 
+                # 3. Качаем
                 result = await self._downloader.download_with_retry(track.identifier)
                 
                 if not result.success:
                     logger.warning(f"Download failed: {result.error}")
-                    if result.error and ("большой" in str(result.error) or "too large" in str(result.error)):
-                         await self._update_dashboard(s, status="⚠️ Слишком большой файл, пропуск...")
-                    else:
-                         await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
+                    await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
                     await asyncio.sleep(1)
                     continue 
                 
@@ -243,6 +245,7 @@ class RadioManager:
 
                 await self._update_dashboard(s, status="▶️ Pre-buffering...")
                 
+                # 4. Отправляем в чат
                 try:
                     with open(s.audio_file_path, "rb") as f:
                         await self._bot.send_audio(
@@ -257,11 +260,16 @@ class RadioManager:
                     
                     await self._update_dashboard(s)
                     
+                    # 5. Ожидание
                     wait_time = float(track.duration) if track.duration > 0 else 180.0
+                    logger.info(f"[{s.chat_id}] Playing track for {wait_time}s...")
+                    
                     try:
+                        # Ждем либо сигнала skip, либо конца трека
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
+                        logger.info(f"[{s.chat_id}] Skipped manually.")
                     except asyncio.TimeoutError:
-                        pass
+                        logger.info(f"[{s.chat_id}] Track finished.")
                         
                 except Exception as e:
                     logger.error(f"Playback error: {e}")
