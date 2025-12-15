@@ -16,18 +16,15 @@ from cache import CacheService
 from youtube import YouTubeDownloader
 from radio import RadioManager
 from handlers import setup_handlers
-from utils import preload_paths, PATH_STORE  # <--- Импорт утилиты
+from utils import preload_paths, PATH_STORE
 
 logger = logging.getLogger("main")
 
 def audio_mime_for(path: Path) -> str:
     ext = path.suffix.lower()
-    if ext == ".mp3":
-        return "audio/mpeg"
-    if ext in (".m4a", ".mp4"):
-        return "audio/mp4"
-    if ext in (".webm", ".opus", ".ogg"):
-        return "audio/webm"
+    if ext == ".mp3": return "audio/mpeg"
+    if ext in (".m4a", ".mp4"): return "audio/mp4"
+    if ext in (".webm", ".opus", ".ogg"): return "audio/webm"
     mime, _ = mimetypes.guess_type(str(path))
     return mime or "application/octet-stream"
 
@@ -36,8 +33,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     settings = Settings()
 
-    # === Инициализация меню ===
-    # Это чинит проблему "Меню устарело" после перезагрузки
+    # 1. Инициализация путей меню
     preload_paths(settings.MUSIC_CATALOG)
     logger.info(f"✅ Menu paths preloaded. Total items: {len(PATH_STORE)}")
 
@@ -45,15 +41,15 @@ async def lifespan(app: FastAPI):
 
     if settings.COOKIES_CONTENT:
         settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
-        logger.info("✅ cookies.txt создан из переменной окружения.")
+        logger.info("✅ cookies.txt created.")
 
+    # 2. Сервисы
     cache = CacheService(settings)
     await cache.initialize()
-    logger.info("Cache initialized")
-
+    
     youtube_downloader = YouTubeDownloader(settings, cache)
 
-    # Увеличиваем таймауты для Telegram API, чтобы не было httpx.ReadError
+    # 3. Telegram Bot
     tg_app = (
         Application.builder()
         .token(settings.BOT_TOKEN)
@@ -63,46 +59,39 @@ async def lifespan(app: FastAPI):
         .build()
     )
 
-    async def on_error(update, context):
-        logger.exception("PTB error: %s", context.error)
+    # Радио менеджер
+    radio = RadioManager(tg_app.bot, settings, youtube_downloader)
 
-    tg_app.add_error_handler(on_error)
-
-    radio = RadioManager(
-        bot=tg_app.bot,
-        settings=settings,
-        downloader=youtube_downloader,
-    )
-
+    # 4. РЕГИСТРАЦИЯ ХЕНДЛЕРОВ (Самое важное!)
     setup_handlers(tg_app, radio, settings)
+    logger.info("✅ Handlers registered.")
 
+    # 5. Запуск бота
     await tg_app.initialize()
     await tg_app.start()
     
-    await tg_app.bot.set_my_commands([
-        ("start", "🚀 Запуск/Перезапуск"),
-        ("menu", "📖 Главное меню"),
-        ("player", "🎧 Открыть плеер"),
-        ("radio", "📻 Включить радио"),
-        ("skip", "⏭️ След. трек"),
-        ("stop", "⏹️ Стоп"),
-    ])
+    try:
+        await tg_app.bot.set_my_commands([
+            ("start", "🚀 Главное меню"),
+            ("stop", "⏹️ Остановить радио"),
+            ("skip", "⏭️ След. трек"),
+        ])
+    except: pass
 
     await tg_app.bot.set_webhook(url=settings.WEBHOOK_URL)
-    logger.info("✅ Webhook set to: %s", settings.WEBHOOK_URL)
+    logger.info(f"✅ Webhook set: {settings.WEBHOOK_URL}")
 
+    # Сохраняем в state
     app.state.settings = settings
     app.state.cache = cache
     app.state.tg_app = tg_app
     app.state.radio = radio
-    app.state.youtube_downloader = youtube_downloader
 
     yield
 
-    try:
-        await app.state.radio.stop_all()
-    except Exception:
-        pass
+    # Shutdown
+    try: await app.state.radio.stop_all()
+    except: pass
     await tg_app.stop()
     await tg_app.shutdown()
     await cache.close()
@@ -119,65 +108,46 @@ async def health():
 @app.get("/api/radio/status")
 async def radio_status(chat_id: str | None = None):
     radio: RadioManager = app.state.radio
-    full_status = radio.status()
-    if chat_id:
-        chat_id_str = str(chat_id)
-        if chat_id_str in full_status.get("sessions", {}):
-             return JSONResponse({"sessions": {chat_id_str: full_status["sessions"][chat_id_str]}})
-        else:
-             return JSONResponse({"sessions": {}})
-    return JSONResponse(full_status)
+    full = radio.status()
+    if chat_id and str(chat_id) in full.get("sessions", {}):
+         return JSONResponse({"sessions": {str(chat_id): full["sessions"][str(chat_id)]}})
+    return JSONResponse(full)
 
 @app.post("/api/radio/skip")
 async def radio_skip(req: Request):
     data = await req.json()
     chat_id = data.get("chat_id")
-    if not chat_id:
-        raise HTTPException(status_code=400, detail="chat_id is required")
-        
-    logger.info(f"API: Received skip request for chat_id: {chat_id}")
-    radio: RadioManager = app.state.radio
-    await radio.skip(int(chat_id))
+    if chat_id:
+        await app.state.radio.skip(int(chat_id))
     return {"ok": True}
 
 @app.post("/api/radio/stop")
 async def radio_stop(req: Request):
     data = await req.json()
     chat_id = data.get("chat_id")
-    if not chat_id:
-        raise HTTPException(status_code=400, detail="chat_id is required")
-
-    logger.info(f"API: Received stop request for chat_id: {chat_id}")
-    radio: RadioManager = app.state.radio
-    await radio.stop(int(chat_id))
-    return {"ok": True, "message": f"Radio stopped for chat_id {chat_id}"}
+    if chat_id:
+        await app.state.radio.stop(int(chat_id))
+    return {"ok": True}
 
 @app.post("/telegram")
 async def telegram_webhook(req: Request):
     data = await req.json()
     tg_app: Application = app.state.tg_app
-    update = Update.de_json(data, tg_app.bot)
-    await tg_app.process_update(update)
+    # Важно: обрабатываем апдейт в контексте приложения
+    await tg_app.update_queue.put(
+        Update.de_json(data, tg_app.bot)
+    )
     return {"ok": True}
 
 @app.get("/audio/{track_id}")
 async def get_audio_file(track_id: str):
-    # logger.info(f"Request for audio: {track_id}") # Можно отключить для чистоты логов
     radio: RadioManager = app.state.radio
-    
-    # Ищем трек в активных сессиях
     for session in radio._sessions.values():
         if session.current and session.current.identifier == track_id:
             if session.audio_file_path and session.audio_file_path.exists():
-                file_path = session.audio_file_path
-                media_type = audio_mime_for(file_path)
                 return FileResponse(
-                    file_path,
-                    media_type=media_type,
-                    headers={
-                        "Cache-Control": "public, max-age=3600",
-                        "Access-Control-Allow-Origin": "*"
-                    }
+                    session.audio_file_path,
+                    media_type=audio_mime_for(session.audio_file_path),
+                    headers={"Access-Control-Allow-Origin": "*"}
                 )
-    
-    raise HTTPException(status_code=404, detail="Track not found")
+    raise HTTPException(status_code=404)
