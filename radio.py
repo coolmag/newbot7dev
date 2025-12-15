@@ -31,17 +31,14 @@ class RadioSession:
     playlist: Deque[TrackInfo] = field(default_factory=deque)
     played_ids: Set[str] = field(default_factory=set)
     
-    # Управление потоком
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     skip_event: asyncio.Event = field(default_factory=asyncio.Event)
     
-    # Состояние
     fails_in_row: int = 0
     last_error: Optional[str] = None
     audio_file_path: Optional[Path] = None
     
-    # DASHBOARD
-    dashboard_msg_id: Optional[int] = None # ID сообщения-пульта
+    dashboard_msg_id: Optional[int] = None
 
 class RadioManager:
     def __init__(self, bot: Bot, settings: Settings, downloader: YouTubeDownloader):
@@ -51,15 +48,11 @@ class RadioManager:
         self._sessions: Dict[int, RadioSession] = {}
         self._tasks: Dict[int, asyncio.Task] = {}
 
-    # --- API для Dashboard ---
-    
     def status(self) -> dict:
-        """Возвращает полный статус для WebApp API"""
         data = {}
         for chat_id, s in self._sessions.items():
             current_info = None
             if s.current:
-                # Определяем MIME
                 mime = "audio/mpeg"
                 if s.audio_file_path:
                     ext = s.audio_file_path.suffix.lower()
@@ -84,15 +77,12 @@ class RadioManager:
             }
         return {"sessions": data}
 
-    # --- Управление сессией ---
-
     async def start(self, chat_id: int, query: str, chat_type: str = "private"):
         await self.stop(chat_id)
         
         session = RadioSession(chat_id=chat_id, query=query.strip(), chat_type=chat_type)
         self._sessions[chat_id] = session
         
-        # Отправляем начальный Dashboard
         msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
         if msg:
             session.dashboard_msg_id = msg.message_id
@@ -103,19 +93,15 @@ class RadioManager:
     async def stop(self, chat_id: int):
         if task := self._tasks.pop(chat_id, None):
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            try: await task
+            except asyncio.CancelledError: pass
         
         if session := self._sessions.pop(chat_id, None):
             session.stop_event.set()
-            # Удаляем файл
             if session.audio_file_path and session.audio_file_path.exists():
                 try: session.audio_file_path.unlink()
                 except: pass
             
-            # Обновляем Dashboard на "Остановлено"
             await self._update_dashboard(session, status="🛑 Эфир завершен")
             
     async def stop_all(self):
@@ -124,13 +110,11 @@ class RadioManager:
 
     async def skip(self, chat_id: int):
         if session := self._sessions.get(chat_id):
+            logger.info(f"[{chat_id}] Skip requested manually")
             session.skip_event.set()
             await self._update_dashboard(session, status="⏭️ Переключение...")
 
-    # --- Внутренняя логика ---
-
     async def _send_dashboard(self, s: RadioSession, status: str) -> Optional[Message]:
-        """Отправляет новое сообщение-дашборд."""
         text = self._build_dashboard_text(s, status)
         try:
             return await self._bot.send_message(
@@ -144,7 +128,6 @@ class RadioManager:
             return None
 
     async def _update_dashboard(self, s: RadioSession, status: str = None):
-        """Редактирует существующий дашборд."""
         if not s.dashboard_msg_id:
             return
         
@@ -160,7 +143,6 @@ class RadioManager:
         except BadRequest as e:
             if "message is not modified" not in str(e):
                 logger.warning(f"Dashboard update failed: {e}")
-                # Если сообщение удалили, отправляем новое, если радио активно
                 if "message to edit not found" in str(e) and not s.stop_event.is_set():
                     msg = await self._send_dashboard(s, status or "Восстановление...")
                     if msg:
@@ -169,7 +151,6 @@ class RadioManager:
             logger.warning(f"Dashboard error: {e}")
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
-        """Генерирует красивый текст для сообщения."""
         if status_override:
             status = status_override
         elif s.current:
@@ -179,11 +160,8 @@ class RadioManager:
 
         track_name = s.current.title if s.current else "..."
         artist_name = s.current.artist if s.current else "Загрузка"
-        
-        # Прогресс бар (декоративный)
         progress = "▓▓▓▓▓░░░░░" 
 
-        # Экранируем Markdown символы
         track_name = track_name.replace("*", "").replace("_", "").replace("`", "")
         artist_name = artist_name.replace("*", "").replace("_", "").replace("`", "")
         query_safe = s.query.replace("*", "").replace("_", "").replace("`", "")
@@ -218,9 +196,10 @@ class RadioManager:
         return False
 
     async def _radio_loop(self, s: RadioSession):
-        """Главный цикл радио."""
         try:
             while not s.stop_event.is_set():
+                s.skip_event.clear() # Сброс флага пропуска
+
                 if len(s.playlist) < 3:
                     await self._update_dashboard(s, status="📡 Поиск частот...")
                     if not await self._fetch_playlist(s):
@@ -239,7 +218,6 @@ class RadioManager:
 
                 track = s.playlist.popleft()
                 s.current = track
-                s.skip_event.clear()
                 
                 await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
                 
@@ -275,18 +253,21 @@ class RadioManager:
                             performer=track.artist,
                             duration=track.duration,
                             caption=f"#{s.query.replace(' ', '_')}",
-                            # === КНОПКА ПОД ТРЕКОМ ===
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
                     await self._update_dashboard(s)
                     
-                    try:
-                        wait_time = float(track.duration) if track.duration > 0 else 180.0
-                        await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
-                    except asyncio.TimeoutError:
-                        pass 
+                    # Ожидание окончания трека
+                    wait_time = float(track.duration) if track.duration > 0 else 180.0
                     
+                    try:
+                        logger.info(f"[{s.chat_id}] Playing track for {wait_time}s...")
+                        await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
+                        logger.info(f"[{s.chat_id}] Skipped manually.")
+                    except asyncio.TimeoutError:
+                        logger.info(f"[{s.chat_id}] Track finished.")
+                        
                 except Exception as e:
                     logger.error(f"Playback error: {e}")
                     await asyncio.sleep(5)
