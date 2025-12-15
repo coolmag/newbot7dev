@@ -159,7 +159,14 @@ async def get_audio_file(track_id: str):
                 media_type = audio_mime_for(file_path) # Используем новую функцию
                 
                 logger.info(f"Serving file: {file_path} with media_type: {media_type}")
-                return FileResponse(file_path, media_type=media_type, headers={"Cache-Control": "public, max-age=3600"})
+                return FileResponse(
+                    file_path,
+                    media_type=media_type,
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "Access-Control-Allow-Origin": "*" # ВАЖНО ДЛЯ ВИЗУАЛИЗАТОРА!
+                    }
+                )
             else:
                 logger.error(f"Audio file link exists, but file not found on disk for track_id: {track_id} at path: {session.audio_file_path}")
                 raise HTTPException(status_code=404, detail="Audio file not found on disk, it might have been cleaned up.")
