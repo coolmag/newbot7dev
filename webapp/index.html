@@ -1,173 +1,80 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Walkman Player</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/webapp/style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cyber Walkman</title>
+    <link rel="stylesheet" href="/webapp/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="walkman-container">
-    <!-- Верхняя часть корпуса -->
-    <div class="walkman-top">
-      <div class="brand-logo">SONY</div>
-      <div class="model-name">WALKMAN</div>
+
+    <div class="walkman-wrapper">
+        <div class="walkman-case">
+            <!-- Branding -->
+            <div class="brand-area">
+                <div class="brand-logo">SONY // CYBER</div>
+                <div class="model-id">WM-2077</div>
+            </div>
+
+            <!-- LCD Display -->
+            <div class="lcd-screen">
+                <div class="lcd-content">
+                    <div class="status-row">
+                        <span id="status-text">READY</span>
+                        <span>BATT 99%</span>
+                    </div>
+                    
+                    <!-- REAL CANVAS VISUALIZER -->
+                    <canvas id="visualizer-canvas" width="300" height="50"></canvas>
+                    
+                    <div class="track-info-lcd">
+                        <div id="track-title" class="scrolling-text">WAITING FOR SIGNAL...</div>
+                        <div id="track-artist">System Standby</div>
+                    </div>
+
+                    <div class="time-row">
+                        <span id="current-time">0:00</span>
+                        <span id="total-time">0:00</span>
+                    </div>
+                    
+                    <div class="progress-container" id="progress-container">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cassette Mechanism -->
+            <div class="cassette-deck">
+                <div class="tape-window">
+                    <div class="glass-reflection"></div>
+                    <div class="reel spinning" id="reel-left"></div>
+                    <div class="tape-strip"></div>
+                    <div class="reel spinning" id="reel-right"></div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls-area">
+                <div class="buttons-row">
+                    <button class="btn" id="btn-prev">⏮</button>
+                    <button class="btn btn-play" id="btn-play">▶</button>
+                    <button class="btn" id="btn-stop">⏹</button>
+                    <button class="btn" id="btn-next">⏭</button>
+                </div>
+                
+                <div class="volume-control">
+                    <span class="vol-icon">🔊</span>
+                    <input type="range" id="volume-slider" min="0" max="100" value="80">
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Основной корпус плеера -->
-    <div class="walkman-body">
-      
-      <!-- LCD Дисплей -->
-      <div class="lcd-screen">
-        <div class="lcd-inner">
-          <!-- Статус бар -->
-          <div class="status-bar">
-            <span class="status-icon" id="status-icon">📻</span>
-            <span class="status-text" id="status-text">RADIO MODE</span>
-            <span class="battery-indicator">
-              <span class="battery-level"></span>
-            </span>
-          </div>
-          
-          <!-- Визуализатор -->
-          <div class="visualizer" id="visualizer">
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-          </div>
-          
-          <!-- Информация о треке -->
-          <div class="track-display">
-            <div class="track-title marquee" id="track-title">
-              <span>Ожидание трека...</span>
-            </div>
-            <div class="track-artist" id="track-artist">---</div>
-          </div>
-          
-          <!-- Жанр и время -->
-          <div class="info-row">
-            <div class="genre-badge" id="genre-badge">
-              <span class="genre-icon">🎸</span>
-              <span class="genre-text" id="genre-text">ROCK</span>
-            </div>
-            <div class="time-display">
-              <span id="current-time">0:00</span>
-              <span class="time-separator">/</span>
-              <span id="total-time">0:00</span>
-            </div>
-          </div>
-          
-          <!-- Прогресс бар -->
-          <div class="progress-container" id="progress-container">
-            <div class="progress-track">
-              <div class="progress-fill" id="progress-bar"></div>
-              <div class="progress-head" id="progress-head"></div>
-            </div>
-          </div>
-          
-          <!-- Дополнительная информация -->
-          <div class="extra-info">
-            <div class="info-item">
-              <span class="info-label">QUERY</span>
-              <span class="info-value" id="query-text">---</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">QUEUE</span>
-              <span class="info-value" id="queue-count">0</span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- Hidden Audio Element -->
+    <!-- crossorigin="anonymous" ВАЖЕН для визуализатора, иначе браузер заблокирует доступ к аудиоданным -->
+    <audio id="audio-player" crossorigin="anonymous"></audio>
 
-      <!-- Кассетный отсек -->
-      <div class="cassette-window">
-        <div class="cassette">
-          <div class="cassette-label" id="cassette-label">
-            <span class="cassette-title">NOW PLAYING</span>
-          </div>
-          <div class="reels-container">
-            <div class="reel left-reel" id="left-reel">
-              <div class="reel-center"></div>
-              <div class="reel-spokes"></div>
-            </div>
-            <div class="tape-path"></div>
-            <div class="reel right-reel" id="right-reel">
-              <div class="reel-center"></div>
-              <div class="reel-spokes"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Панель управления -->
-      <div class="controls-panel">
-        <!-- Верхний ряд - вспомогательные кнопки -->
-        <div class="controls-row secondary">
-          <button class="btn-secondary" id="btn-shuffle" title="Перемешать">
-            <span>🔀</span>
-          </button>
-          <button class="btn-secondary" id="btn-repeat" title="Повтор">
-            <span>🔁</span>
-          </button>
-          <button class="btn-secondary" id="btn-eq" title="Эквалайзер">
-            <span>📊</span>
-          </button>
-        </div>
-        
-        <!-- Основные кнопки управления -->
-        <div class="controls-row primary">
-          <button class="btn-control btn-prev" id="btn-prev">
-            <div class="btn-icon">⏮</div>
-            <div class="btn-label">REW</div>
-          </button>
-          
-          <button class="btn-control btn-play" id="btn-play">
-            <div class="btn-icon" id="play-icon">▶</div>
-            <div class="btn-label">PLAY</div>
-          </button>
-          
-          <button class="btn-control btn-stop" id="btn-stop">
-            <div class="btn-icon">⏹</div>
-            <div class="btn-label">STOP</div>
-          </button>
-          
-          <button class="btn-control btn-next" id="btn-next">
-            <div class="btn-icon">⏭</div>
-            <div class="btn-label">FF</div>
-          </button>
-        </div>
-
-        <!-- Регулятор громкости -->
-        <div class="volume-section">
-          <span class="volume-icon">🔊</span>
-          <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="75">
-          <span class="volume-value" id="volume-value">75</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Нижняя часть с разъемами -->
-    <div class="walkman-bottom">
-      <div class="jack-port">🎧</div>
-      <div class="walkman-serial">MODEL NO. WM-EX921</div>
-    </div>
-  </div>
-
-  <!-- Скрытый аудио элемент -->
-  <audio id="audio-player" preload="auto"></audio>
-  
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="/webapp/script.js"></script>
+    <script src="/webapp/script.js"></script>
 </body>
 </html>

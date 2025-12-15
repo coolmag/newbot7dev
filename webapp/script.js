@@ -1,325 +1,242 @@
-console.log("script.js loaded and running");
-
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM fully loaded and parsed");
-
-    // ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
-    let currentTrack = null;
+    // ===== CONFIG & STATE =====
+    let audioCtx, analyser, dataArray, canvas, canvasCtx;
     let isPlaying = false;
-    let isUpdating = false;
     let chatId = null;
+    let updateInterval;
+    let hasInteracted = false; // Для автоплея
 
-    // ===== DOM ЭЛЕМЕНТЫ =====
+    // DOM Elements
     const audioPlayer = document.getElementById('audio-player');
-    const btnPlay = document.getElementById('btn-play');
-    const btnStop = document.getElementById('btn-stop');
-    const btnPrev = document.getElementById('btn-prev');
-    const btnNext = document.getElementById('btn-next');
-    const btnShuffle = document.getElementById('btn-shuffle');
-    const btnRepeat = document.getElementById('btn-repeat');
-    const playIcon = document.getElementById('play-icon');
-    const volumeSlider = document.getElementById('volume-slider');
-    const volumeValue = document.getElementById('volume-value');
+    const playBtn = document.getElementById('btn-play');
+    const prevBtn = document.getElementById('btn-prev');
+    const nextBtn = document.getElementById('btn-next');
+    const stopBtn = document.getElementById('btn-stop');
     const trackTitle = document.getElementById('track-title');
     const trackArtist = document.getElementById('track-artist');
-    const statusIcon = document.getElementById('status-icon');
-    const statusText = document.getElementById('status-text');
-    const genreText = document.getElementById('genre-text');
-    const genreIcon = document.querySelector('.genre-icon');
     const currentTimeEl = document.getElementById('current-time');
     const totalTimeEl = document.getElementById('total-time');
-    const progressBar = document.getElementById('progress-bar');
-    const progressHead = document.getElementById('progress-head');
+    const progressBar = document.getElementById('progress-fill');
     const progressContainer = document.getElementById('progress-container');
-    const queryText = document.getElementById('query-text');
-    const queueCount = document.getElementById('queue-count');
-    const visualizer = document.getElementById('visualizer');
-    const leftReel = document.getElementById('left-reel');
-    const rightReel = document.getElementById('right-reel');
-
-    // ===== МАППИНГ ЖАНРОВ =====
-    const genreMapping = {
-        'rock': { icon: '🎸', name: 'ROCK' },
-        'pop': { icon: '🎤', name: 'POP' },
-        'jazz': { icon: '🎷', name: 'JAZZ' },
-        'classical': { icon: '🎻', name: 'CLASSICAL' },
-        'electronic': { icon: '🎹', name: 'ELECTRONIC' },
-        'hip-hop': { icon: '🎧', name: 'HIP-HOP' },
-        'rap': { icon: '🎤', name: 'RAP' },
-        'metal': { icon: '🤘', name: 'METAL' },
-        'blues': { icon: '🎺', name: 'BLUES' },
-        'country': { icon: '🤠', name: 'COUNTRY' },
-        'reggae': { icon: '🌴', name: 'REGGAE' },
-        'soul': { icon: '💜', name: 'SOUL' },
-        'funk': { icon: '🕺', name: 'FUNK' },
-        'disco': { icon: '🪩', name: 'DISCO' },
-        'punk': { icon: '⚡', name: 'PUNK' },
-        'indie': { icon: '🎵', name: 'INDIE' },
-        'alternative': { icon: '🔊', name: 'ALT' },
-        'default': { icon: '📻', name: 'RADIO' }
-    };
-
-    // ===== УТИЛИТЫ =====
-    function formatTime(seconds) {
-        if (!seconds || isNaN(seconds)) return '0:00';
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    function detectGenre(query) {
-        if (!query) return genreMapping['default'];
-        const q = query.toLowerCase();
-        for (const [key, value] of Object.entries(genreMapping)) {
-            if (q.includes(key)) return value;
-        }
-        return genreMapping['default'];
-    }
-
-    function truncateText(text, maxLength = 40) {
-        if (!text) return '---';
-        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-    }
-
-    // ===== ОБНОВЛЕНИЕ UI =====
-    function updateUI() {
-        if (!btnPlay) return; // Защита, если DOM еще не готов
-        playIcon.textContent = isPlaying ? '⏸' : '▶';
-        btnPlay.querySelector('.btn-label').textContent = isPlaying ? 'PAUSE' : 'PLAY';
-        if (isPlaying) {
-            visualizer.classList.add('playing');
-            leftReel.classList.add('spinning');
-            rightReel.classList.add('spinning');
-            statusIcon.textContent = '▶️';
-            statusText.textContent = 'NOW PLAYING';
-        } else {
-            visualizer.classList.remove('playing');
-            leftReel.classList.remove('spinning');
-            rightReel.classList.remove('spinning');
-            statusIcon.textContent = '⏸️';
-            statusText.textContent = 'PAUSED';
+    const statusText = document.getElementById('status-text');
+    const reels = document.querySelectorAll('.reel');
+    
+    // Telegram WebApp Init
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    
+    // ===== HAPTIC FEEDBACK HELPER =====
+    function haptic(style = 'light') {
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.impactOccurred(style);
         }
     }
 
-    function updateTrackInfo(session) {
-        if (!session || !session.current) {
-            trackTitle.innerHTML = '<span>Ожидание трека...</span>';
-            trackTitle.classList.remove('scrolling');
-            trackArtist.textContent = '---';
-            queryText.textContent = '---';
-            queueCount.textContent = '0';
-            totalTimeEl.textContent = '0:00';
-            currentTimeEl.textContent = '0:00';
-            progressBar.style.width = '0%';
-            progressHead.style.left = '0%';
-            const genre = detectGenre(session ? session.query : '');
-            genreIcon.textContent = genre.icon;
-            genreText.textContent = genre.name;
-            return;
-        }
-
-        const title = session.current.title || 'Загрузка...';
-        const artist = session.current.artist || 'Неизвестен';
-        trackTitle.innerHTML = `<span>${truncateText(title)}</span>`;
-        if (title.length > 25) {
-            trackTitle.classList.add('scrolling');
-        } else {
-            trackTitle.classList.remove('scrolling');
-        }
-        trackArtist.textContent = artist;
-        const genre = detectGenre(session.query);
-        genreIcon.textContent = genre.icon;
-        genreText.textContent = genre.name;
-        queryText.textContent = truncateText(session.query, 15);
-        queueCount.textContent = session.playlist_len || 0;
-        if (session.last_error) {
-            statusIcon.textContent = '⚠️';
-            statusText.textContent = 'ERROR';
-        } else {
-            statusIcon.textContent = '📻';
-            statusText.textContent = 'RADIO MODE';
+    // ===== AUDIO VISUALIZER (THE COOL PART) =====
+    function initAudioContext() {
+        if (audioCtx) return;
+        
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            analyser = audioCtx.createAnalyser();
+            
+            // Connect DOM audio element to analyser
+            const source = audioCtx.createMediaElementSource(audioPlayer);
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            analyser.fftSize = 64; // Количество столбиков (меньше = шире)
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+            canvas = document.getElementById('visualizer-canvas');
+            canvasCtx = canvas.getContext('2d');
+            
+            drawVisualizer();
+        } catch (e) {
+            console.warn("Visualizer init failed (likely CORS or browser policy):", e);
         }
     }
 
-    // ===== ОБРАБОТЧИКИ СОБЫТИЙ =====
-    audioPlayer.addEventListener('timeupdate', () => {
-        if (audioPlayer.duration) {
-            const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-            progressBar.style.width = `${progress}%`;
-            progressHead.style.left = `${progress}%`;
-            currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
+    function drawVisualizer() {
+        if (!isPlaying) {
+             // Рисуем плоскую линию если пауза
+             canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+             canvasCtx.fillStyle = 'rgba(51, 255, 51, 0.1)';
+             canvasCtx.fillRect(0, canvas.height/2, canvas.width, 1);
+             requestAnimationFrame(drawVisualizer);
+             return;
         }
-    });
 
-    audioPlayer.addEventListener('durationchange', () => {
-        totalTimeEl.textContent = formatTime(audioPlayer.duration);
-    });
+        requestAnimationFrame(drawVisualizer);
+        analyser.getByteFrequencyData(dataArray);
 
-    progressContainer.addEventListener('click', (e) => {
-        if (audioPlayer.duration) {
-            const rect = progressContainer.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            audioPlayer.currentTime = (clickX / rect.width) * audioPlayer.duration;
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / dataArray.length) * 2.5;
+        let barHeight;
+        let x = 0;
+
+        for (let i = 0; i < dataArray.length; i++) {
+            barHeight = dataArray[i] / 2; // Масштабирование высоты
+
+            // Цвет столбиков (Градиент от зеленого к ярко-зеленому)
+            const g = barHeight + (25 * (i / dataArray.length));
+            canvasCtx.fillStyle = `rgb(0, ${g + 100}, 0)`;
+            
+            // Эффект "зеркала" (сверху и снизу)
+            canvasCtx.fillRect(x, canvas.height / 2 - barHeight / 2, barWidth, barHeight);
+
+            x += barWidth + 1;
         }
-    });
+    }
 
-    btnPlay.addEventListener('click', async () => {
-        console.log('Play button clicked'); // Логирование клика
-        userGestureMade = true; // Пользователь нажал кнопку
-        if (audioPlayer.paused && audioPlayer.src) {
-            try {
-                await audioPlayer.play();
-            } catch (error) {
-                console.warn('Play failed:', error);
-            }
+    // ===== PLAYER LOGIC =====
+    
+    // 1. Play/Pause
+    playBtn.addEventListener('click', () => {
+        haptic('medium');
+        if (!audioCtx) initAudioContext();
+        
+        if (audioPlayer.paused) {
+            audioPlayer.play().then(() => {
+                setPlayingState(true);
+            }).catch(e => console.error("Play error:", e));
         } else {
             audioPlayer.pause();
+            setPlayingState(false);
         }
+        hasInteracted = true;
     });
 
-    btnStop.addEventListener('click', async () => {
-        console.log('Stop button clicked'); // Логирование клика
-        if (!chatId) return;
-        try {
-            await fetch('/api/radio/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId })
-            });
-            audioPlayer.pause(); // Мгновенная пауза на фронте
-            audioPlayer.src = ''; // Очистка источника
-        } catch (e) {
-            console.error('Stop error:', e);
+    function setPlayingState(playing) {
+        isPlaying = playing;
+        if (playing) {
+            playBtn.classList.add('playing');
+            playBtn.innerHTML = '<i class="icon">⏸</i>';
+            statusText.textContent = 'PLAYING >>';
+            reels.forEach(r => r.classList.add('active'));
+        } else {
+            playBtn.classList.remove('playing');
+            playBtn.innerHTML = '<i class="icon">▶</i>';
+            statusText.textContent = 'PAUSED ||';
+            reels.forEach(r => r.classList.remove('active'));
         }
-    });
+    }
 
-    btnNext.addEventListener('click', async () => {
-        console.log('Next button clicked'); // Логирование клика
-        if (!chatId) return;
-        try {
-            await fetch('/api/radio/skip', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId })
-            });
-        } catch (e) {
-            console.error('Skip error:', e);
-        }
+    // 2. Next/Skip (Backend Call)
+    nextBtn.addEventListener('click', async () => {
+        haptic('heavy');
+        await sendCommand('skip');
+        // Сброс UI пока грузится
+        statusText.textContent = 'SEEKING...';
     });
-
-    btnPrev.addEventListener('click', () => {
+    
+    // 3. Stop
+    stopBtn.addEventListener('click', async () => {
+        haptic('heavy');
+        await sendCommand('stop');
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+        setPlayingState(false);
+    });
+    
+    // 4. Prev (Restart track)
+    prevBtn.addEventListener('click', () => {
+        haptic('light');
         audioPlayer.currentTime = 0;
     });
 
-    btnShuffle.addEventListener('click', () => { btnShuffle.classList.toggle('active'); });
-    btnRepeat.addEventListener('click', () => {
-        btnRepeat.classList.toggle('active');
-        audioPlayer.loop = btnRepeat.classList.contains('active');
+    // 5. Volume
+    document.getElementById('volume-slider').addEventListener('input', (e) => {
+        audioPlayer.volume = e.target.value / 100;
     });
 
-    volumeSlider.addEventListener('input', (e) => {
-        const value = e.target.value;
-        audioPlayer.volume = value / 100;
-        volumeValue.textContent = value;
+    // 6. Progress Bar Click
+    progressContainer.addEventListener('click', (e) => {
+        haptic('light');
+        const width = progressContainer.clientWidth;
+        const clickX = e.offsetX;
+        const duration = audioPlayer.duration;
+        audioPlayer.currentTime = (clickX / width) * duration;
     });
 
-    audioPlayer.addEventListener('play', () => { isPlaying = true; updateUI(); });
-    audioPlayer.addEventListener('pause', () => { isPlaying = false; updateUI(); });
-    audioPlayer.addEventListener('ended', async () => {
-        if (!audioPlayer.loop && chatId) {
-            try {
-                await fetch('/api/radio/skip', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: chatId })
-                });
-            } catch (e) {
-                console.error('Auto-skip error:', e);
-            }
+    // 7. Time Update
+    audioPlayer.addEventListener('timeupdate', () => {
+        if (!isNaN(audioPlayer.duration)) {
+            const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+            progressBar.style.width = `${percent}%`;
+            currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
+            totalTimeEl.textContent = formatTime(audioPlayer.duration);
         }
     });
 
-    function setAudioSource(url, mime) {
-        audioPlayer.pause();
-        audioPlayer.innerHTML = ""; // сбросить прошлые <source>
+    // 8. Auto-Next on End (Crucial for queue!)
+    audioPlayer.addEventListener('ended', () => {
+        console.log("Track ended. Requesting skip...");
+        sendCommand('skip');
+    });
 
-        const s = document.createElement("source");
-        s.src = url;
-        if (mime) s.type = mime;   // например "audio/mp4"
-        audioPlayer.appendChild(s);
-
-        audioPlayer.load();
+    // ===== BACKEND SYNC =====
+    async function sendCommand(action) {
+        if (!chatId) return;
+        try {
+            await fetch(`/api/radio/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chatId })
+            });
+        } catch (e) {
+            console.error(e);
+        }
     }
 
-    // ===== СЕТЕВЫЕ ЗАПРОСЫ =====
-    async function tick() {
-        console.log("Tick function called");
-        if (isUpdating || !chatId) return;
-        isUpdating = true;
+    async function syncState() {
+        if (!chatId) return;
         try {
-            const response = await fetch(`/api/radio/status?chat_id=${chatId}`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const data = await response.json();
+            const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
+            const data = await res.json();
             const session = data.sessions ? data.sessions[chatId] : null;
 
-            if (session && session.current && session.current.audio_url) {
-                // Сравниваем только URL, чтобы не было лишних обновлений
-                const currentAudioSrc = audioPlayer.querySelector('source') ? audioPlayer.querySelector('source').src : '';
-                if (currentAudioSrc !== session.current.audio_url) {
-                    console.log("New track detected. Updating src:", session.current.audio_url);
-                    setAudioSource(session.current.audio_url, session.current.audio_mime);
-                    
-                    if (userGestureMade) {
-                        try {
-                            await audioPlayer.play();
-                        } catch (error) {
-                            console.warn('Autoplay failed after user gesture:', error);
-                        }
-                    } else {
-                        console.warn('Autoplay was prevented. User must interact with the page first.');
-                    }
+            if (session && session.current) {
+                // Update Metadata
+                const title = session.current.title;
+                if (trackTitle.innerText !== title) {
+                     trackTitle.innerText = title;
+                     trackTitle.classList.add('animate');
+                     trackArtist.innerText = session.current.artist || "Unknown Artist";
+                     
+                     // New Track Source
+                     // Важно: crossOrigin="anonymous" нужен для Canvas Visualizer!
+                     if (audioPlayer.src !== session.current.audio_url) {
+                         audioPlayer.crossOrigin = "anonymous"; 
+                         audioPlayer.src = session.current.audio_url;
+                         if (hasInteracted) {
+                             audioPlayer.play().catch(console.warn);
+                             setPlayingState(true);
+                         }
+                     }
                 }
-            } else if (!session && (audioPlayer.src || audioPlayer.querySelector('source'))) {
-                audioPlayer.pause();
-                audioPlayer.innerHTML = "";
-                audioPlayer.src = "";
             }
-            updateTrackInfo(session); // Обновляем инфо в любом случае
-
-        } catch (error) {
-            console.error('Status fetch error:', error);
-            statusIcon.textContent = '❌';
-            statusText.textContent = 'CONNECTION ERROR';
-        } finally {
-            isUpdating = false;
+        } catch (e) {
+            console.error("Sync error:", e);
         }
     }
 
-    // ===== ИНИЦИАЛИЗАЦИЯ =====
-    function initialize() {
-        const urlParams = new URLSearchParams(window.location.search);
-        chatId = urlParams.get('chat_id');
-        console.log("Initialized with chatId:", chatId);
-
-        audioPlayer.volume = volumeSlider.value / 100;
-        volumeValue.textContent = volumeSlider.value;
-
-        if (window.Telegram && window.Telegram.WebApp) {
-            const tg = window.Telegram.WebApp;
-            tg.ready();
-            tg.expand();
-            document.body.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
-        }
-
-        updateUI();
-        tick();
-        setInterval(tick, 5000);
-
-        const bars = visualizer.querySelectorAll('.bar');
-        bars.forEach((bar, index) => {
-            bar.style.height = `${Math.random() * 20 + 5}px`;
-        });
+    // ===== UTILS =====
+    function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m}:${sec < 10 ? '0' : ''}${sec}`;
     }
 
-    initialize();
+    // ===== INIT =====
+    const urlParams = new URLSearchParams(window.location.search);
+    chatId = urlParams.get('chat_id');
+    
+    // Start Polling
+    setInterval(syncState, 3000); // Check server every 3s
+    syncState(); // Initial check
 });
