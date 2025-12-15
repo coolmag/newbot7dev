@@ -21,7 +21,7 @@ from keyboards import get_dashboard_keyboard
 
 logger = logging.getLogger("radio")
 
- @dataclass
+@dataclass
 class RadioSession:
     chat_id: int
     query: str
@@ -94,7 +94,8 @@ class RadioManager:
         
         # Отправляем начальный Dashboard
         msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
-        session.dashboard_msg_id = msg.message_id
+        if msg:
+            session.dashboard_msg_id = msg.message_id
         
         self._tasks[chat_id] = asyncio.create_task(self._radio_loop(session))
         logger.info(f"[{chat_id}] Started radio: {query}")
@@ -102,6 +103,10 @@ class RadioManager:
     async def stop(self, chat_id: int):
         if task := self._tasks.pop(chat_id, None):
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         
         if session := self._sessions.pop(chat_id, None):
             session.stop_event.set()
@@ -125,15 +130,19 @@ class RadioManager:
 
     # --- Внутренняя логика ---
 
-    async def _send_dashboard(self, s: RadioSession, status: str) -> Message:
+    async def _send_dashboard(self, s: RadioSession, status: str) -> Optional[Message]:
         """Отправляет новое сообщение-дашборд."""
         text = self._build_dashboard_text(s, status)
-        return await self._bot.send_message(
-            chat_id=s.chat_id,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
-        )
+        try:
+            return await self._bot.send_message(
+                chat_id=s.chat_id,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
+            )
+        except Exception as e:
+            logger.error(f"[{s.chat_id}] Failed to send dashboard: {e}")
+            return None
 
     async def _update_dashboard(self, s: RadioSession, status: str = None):
         """Редактирует существующий дашборд."""
@@ -152,10 +161,13 @@ class RadioManager:
         except BadRequest as e:
             if "message is not modified" not in str(e):
                 logger.warning(f"Dashboard update failed: {e}")
-                # Если сообщение удалили, отправляем новое
-                if "message to edit not found" in str(e):
-                    msg = await self._send_dashboard(s, status)
-                    s.dashboard_msg_id = msg.message_id
+                # Если сообщение удалили, отправляем новое, если радио активно
+                if "message to edit not found" in str(e) and not s.stop_event.is_set():
+                    msg = await self._send_dashboard(s, status or "Восстановление...")
+                    if msg:
+                        s.dashboard_msg_id = msg.message_id
+        except Exception as e:
+            logger.warning(f"Dashboard error: {e}")
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
         """Генерирует красивый текст для сообщения."""
@@ -172,11 +184,16 @@ class RadioManager:
         # Прогресс бар (декоративный)
         progress = "▓▓▓▓▓░░░░░" 
 
+        # Экранируем Markdown символы
+        track_name = track_name.replace("*", "").replace("_", "").replace("`", "")
+        artist_name = artist_name.replace("*", "").replace("_", "").replace("`", "")
+        query_safe = s.query.replace("*", "").replace("_", "").replace("`", "")
+
         return f"""📻 *CYBER RADIO V7*
 ━━━━━━━━━━━━━━━━━━
 💿 *Трек:* `{track_name}`
 👤 *Артист:* `{artist_name}`
-🏷 *Волна:* _{s.query}_
+🏷 *Волна:* _{query_safe}_
 
 {progress}
 
@@ -188,6 +205,7 @@ class RadioManager:
         q_variants = [s.query, f"{s.query} music", f"best {s.query}"]
         actual_query = random.choice(q_variants)
         
+        logger.info(f"[{s.chat_id}] Searching tracks: {actual_query}")
         tracks = await self._downloader.search(
             actual_query, 
             limit=self._settings.MAX_RESULTS
@@ -198,6 +216,7 @@ class RadioManager:
             new_tracks = [t for t in tracks if t.identifier not in s.played_ids]
             random.shuffle(new_tracks)
             s.playlist.extend(new_tracks)
+            logger.info(f"[{s.chat_id}] Found {len(new_tracks)} new tracks")
             return True
         return False
 
@@ -214,6 +233,7 @@ class RadioManager:
                             # Полный провал поиска - меняем запрос на рандомный жанр
                             s.query = random.choice(self._settings.RADIO_GENRES)
                             s.fails_in_row = 0
+                            logger.warning(f"[{s.chat_id}] Search failed, switching to {s.query}")
                         await asyncio.sleep(5)
                         continue
                     s.fails_in_row = 0
@@ -239,7 +259,9 @@ class RadioManager:
                 
                 if not result.success:
                     logger.warning(f"Download failed: {result.error}")
-                    continue # Просто берем следующий
+                    await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
+                    await asyncio.sleep(2)
+                    continue 
                 
                 s.audio_file_path = Path(result.file_path)
                 s.played_ids.add(track.identifier)
@@ -252,8 +274,7 @@ class RadioManager:
                 await self._update_dashboard(s, status="▶️ Pre-buffering...")
                 
                 try:
-                    # Отправляем аудио файл (это создает плеер в Телеграме)
-                    # ВАЖНО: Мы не ждем, пока он загрузится пользователю, мы просто кидаем файл в чат
+                    # Отправляем аудио файл
                     with open(s.audio_file_path, "rb") as f:
                         await self._bot.send_audio(
                             chat_id=s.chat_id,
@@ -264,24 +285,22 @@ class RadioManager:
                             caption=f"#{s.query.replace(' ', '_')}"
                         )
                     
-                    # Сразу после отправки обновляем дашборд - теперь это "Пульт"
-                    await self._update_dashboard(s) # Статус по умолчанию (Играет...)
+                    # Сразу после отправки обновляем дашборд
+                    await self._update_dashboard(s)
                     
                     # 5. Ожидание конца трека или скипа
-                    # Ждем длительность трека, но прерываемся по skip_event
                     try:
                         wait_time = float(track.duration) if track.duration > 0 else 180.0
-                        # Ограничиваем ожидание, если трек очень длинный (чтобы обновить метаданные)
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                     except asyncio.TimeoutError:
-                        pass # Трек доиграл до конца
+                        pass # Трек доиграл
                     
                 except Exception as e:
                     logger.error(f"Playback error: {e}")
                     await asyncio.sleep(5)
 
         except asyncio.CancelledError:
-            pass
+            logger.info(f"[{s.chat_id}] Loop cancelled")
         except Exception as e:
             logger.exception("Critical radio loop error")
         finally:
