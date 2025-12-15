@@ -218,4 +218,58 @@ class RadioManager:
                 track = s.playlist.popleft()
                 s.current = track
                 
-                await 
+                await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title}...")
+                
+                if s.audio_file_path and s.audio_file_path.exists():
+                    try: s.audio_file_path.unlink()
+                    except: pass
+                
+                result = await self._downloader.download_with_retry(track.identifier)
+                
+                if not result.success:
+                    logger.warning(f"Download failed: {result.error}")
+                    if result.error and ("большой" in str(result.error) or "too large" in str(result.error)):
+                         await self._update_dashboard(s, status="⚠️ Слишком большой файл, пропуск...")
+                    else:
+                         await self._update_dashboard(s, status=f"⚠️ Ошибка: {result.error}")
+                    await asyncio.sleep(1)
+                    continue 
+                
+                s.audio_file_path = Path(result.file_path)
+                s.played_ids.add(track.identifier)
+                
+                if len(s.played_ids) > 300:
+                    s.played_ids = set(list(s.played_ids)[-100:])
+
+                await self._update_dashboard(s, status="▶️ Pre-buffering...")
+                
+                try:
+                    with open(s.audio_file_path, "rb") as f:
+                        await self._bot.send_audio(
+                            chat_id=s.chat_id,
+                            audio=f,
+                            title=track.title,
+                            performer=track.artist,
+                            duration=track.duration,
+                            caption=f"#{s.query.replace(' ', '_')}",
+                            reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
+                        )
+                    
+                    await self._update_dashboard(s)
+                    
+                    wait_time = float(track.duration) if track.duration > 0 else 180.0
+                    try:
+                        await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
+                    except asyncio.TimeoutError:
+                        pass
+                        
+                except Exception as e:
+                    logger.error(f"Playback error: {e}")
+                    await asyncio.sleep(5)
+
+        except asyncio.CancelledError:
+            logger.info(f"[{s.chat_id}] Loop cancelled")
+        except Exception as e:
+            logger.exception("Critical radio loop error")
+        finally:
+            logger.info(f"[{s.chat_id}] Loop finished")
