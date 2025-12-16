@@ -59,7 +59,7 @@ class YouTubeDownloader:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
 
         def filter_entry(e: Dict[str, Any]) -> bool:
-            if not (e and e.get("id") and e.get("title")): return False
+            if not (e and e.get("id") and len(e.get("id")) == 11 and e.get("title")): return False
             title = e.get('title', '').lower()
             duration = int(e.get('duration') or 0)
 

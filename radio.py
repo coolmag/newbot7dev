@@ -45,16 +45,44 @@ class RadioManager:
         self._sessions: Dict[int, RadioSession] = {}
 
     def status(self) -> dict:
-        # ... (status method remains the same)
-        return {}
+        data = {}
+        for chat_id, s in self._sessions.items():
+            current_info = None
+            if s.current:
+                mime = "audio/mpeg" 
+                current_info = {
+                    "title": s.current.title,
+                    "artist": s.current.artist,
+                    "duration": s.current.duration,
+                    "identifier": s.current.identifier,
+                    "audio_url": f"{self._settings.BASE_URL}/audio/{s.current.identifier}",
+                    "audio_mime": mime
+                }
+            
+            data[str(chat_id)] = {
+                "chat_id": chat_id,
+                "query": s.query,
+                "current": current_info,
+                "playlist_len": len(s.playlist),
+                "is_active": not s.stop_event.is_set()
+            }
+        return {"sessions": data}
 
-    async def start(self, chat_id: int, query: str, chat_type: str = "private"):
+    async def start(self, chat_id: int, query: str, chat_type: str = "private", message_id: Optional[int] = None):
         await self.stop(chat_id)
+        
         session = RadioSession(chat_id=chat_id, query=query.strip(), chat_type=chat_type)
         self._sessions[chat_id] = session
-        msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
-        if msg:
-            session.dashboard_msg_id = msg.message_id
+        
+        # Если есть ID сообщения, редактируем его. Иначе - отправляем новое.
+        if message_id:
+            session.dashboard_msg_id = message_id
+            await self._update_dashboard(session, status="🔍 Поиск треков...")
+        else:
+            msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
+            if msg:
+                session.dashboard_msg_id = msg.message_id
+        
         asyncio.create_task(self._radio_loop(session))
         logger.info(f"[{chat_id}] Радио запущено: {query}")
 

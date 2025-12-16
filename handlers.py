@@ -141,16 +141,12 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             if not path_str: return
 
             search_query = get_query_from_catalog(path_str)
-            await radio.start(chat_id, search_query, chat_type)
-            try:
-                await query.delete_message()
-            except BadRequest: pass
+            # Передаем ID сообщения для его редактирования, а не удаления
+            await radio.start(chat_id, search_query, chat_type, message_id=query.message.message_id)
 
         elif data == "play_random":
-            await radio.start(chat_id, "top 50 global hits", chat_type)
-            try:
-                await query.delete_message()
-            except BadRequest: pass
+            # Передаем ID сообщения для его редактирования
+            await radio.start(chat_id, "top 50 global hits", chat_type, message_id=query.message.message_id)
 
         elif data == "stop_radio":
             await radio.stop(chat_id)
