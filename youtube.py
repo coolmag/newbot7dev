@@ -119,7 +119,7 @@ class YouTubeDownloader:
                 if duration:
                     duration = int(duration)
                     if duration > 900: continue # > 15 мин
-                    if duration < 30: continue # < 30 сек
+                    if duration < 120: continue # < 2 мин
                 
                 # Если длительность 0 или None - пропускаем (обычно это стримы)
                 # НО: иногда это норм треки. Давай рисковать только если это не "Radio"

@@ -214,7 +214,8 @@ class RadioManager:
                     
                     limit = 90.0
                     duration = float(track_info.duration)
-                    wait_time = duration if (duration > 0 and duration < limit) else limit
+                    # Ждем либо полную длительность, либо 90 сек, в зависимости от того, что короче
+                    wait_time = min(duration, limit) if duration > 0 else limit
                     
                     try:
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
