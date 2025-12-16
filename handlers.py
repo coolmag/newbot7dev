@@ -87,22 +87,91 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
     async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
-        try: await query.answer()
-        except: pass
-        
+        try:
+            await query.answer()
+        except BadRequest as e:
+            logger.warning(f"Failed to answer callback query: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error answering callback query: {e}")
+
         data = query.data
         chat_id = query.message.chat_id
         chat_type = query.message.chat.type
 
+        # --- Навигация по каталогу ---
         if data == "main_menu":
-            await query.edit_message_text(
-                "💿 *Каталог жанров:*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=get_main_menu_keyboard()
-            )
+            try:
+                await query.edit_message_text(
+                    "💿 *Каталог жанров:*",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=get_main_menu_keyboard()
+                )
+            except BadRequest: pass # Сообщение не изменилось
         
         elif data.startswith("cat|"):
             path_hash = data.removeprefix("cat|")
             path_str = resolve_path(path_hash)
-            
-            # АВТО-ВОССТАНОВЛЕНИЕ: Если хэш протух, возвращаем в главное 
+
+            if not path_str:
+                logger.warning(f"Stale hash received: {path_hash}")
+                try:
+                    await query.edit_message_text("❗️ Меню устарело, пожалуйста, откройте его заново.", reply_markup=None)
+                except BadRequest: pass
+                return
+
+            path = path_str.split('|')
+            current_level = settings.MUSIC_CATALOG
+            try:
+                for p in path:
+                    current_level = current_level[p]
+            except KeyError:
+                logger.error(f"Invalid path resolved from hash {path_hash}: {path_str}")
+                return
+
+            await query.edit_message_text(
+                f"💿 *{path[-1]}:*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_subcategory_keyboard(path_str)
+            )
+
+        # --- Управление радио ---
+        elif data.startswith("play_cat|"):
+            path_hash = data.removeprefix("play_cat|")
+            path_str = resolve_path(path_hash)
+            if not path_str: return
+
+            search_query = get_query_from_catalog(path_str)
+            await radio.start(chat_id, search_query, chat_type)
+            try:
+                await query.delete_message()
+            except BadRequest: pass
+
+        elif data == "play_random":
+            await radio.start(chat_id, "top 50 global hits", chat_type)
+            try:
+                await query.delete_message()
+            except BadRequest: pass
+
+        elif data == "stop_radio":
+            await radio.stop(chat_id)
+
+        elif data == "skip_track":
+            await radio.skip(chat_id)
+        
+        elif data == "noop":
+            # Ничего не делаем, просто отвечаем на колбек
+            pass
+
+    # --- Inline ---
+    async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # TODO: Реализовать инлайн поиск, если нужно
+        pass
+
+    # --- Регистрация ---
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("menu", start_cmd))
+    app.add_handler(CommandHandler("radio", radio_cmd))
+    app.add_handler(CommandHandler("stop", stop_cmd))
+    app.add_handler(CommandHandler("skip", skip_cmd))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(InlineQueryHandler(inline_query_handler))

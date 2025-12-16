@@ -3,5 +3,5 @@ uvicorn[standard]==0.32.1
 python-telegram-bot==21.9
 aiohttp==3.11.11
 aiosqlite==0.20.0
-yt-dlp>=2024.12.13
+yt-dlp==2025.11.26
 pydantic==1.10.13

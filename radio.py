@@ -207,8 +207,6 @@ class RadioManager:
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    # 6. Таймер (90 сек или длительность)
-                    # Если трек длиннее 90 сек, играем 90 сек. Если короче - играем полностью.
                     limit = 90.0
                     duration = float(track_info.duration)
                     wait_time = duration if (duration > 0 and duration < limit) else limit
@@ -216,11 +214,21 @@ class RadioManager:
                     try:
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                     except asyncio.TimeoutError:
-                        pass # Время вышло, идем дальше
+                        pass
                     
+                except TelegramError as e:
+                    if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+                        logger.warning(f"[{s.chat_id}] Bot is forbidden/chat not found. Stopping session.")
+                        s.stop_event.set()
+                        break 
+                    else:
+                        logger.error(f"[{s.chat_id}] Telegram API error on send: {e}")
+                        await asyncio.sleep(5)
+
                 except Exception as e:
-                    logger.error(f"Send error: {e}")
+                    logger.error(f"[{s.chat_id}] Send error: {e}", exc_info=True)
                     await asyncio.sleep(5)
+                
                 
                 # Удаляем сыгранный файл (чтобы не забивать диск)
                 # Но не удаляем сразу, даем телеграму секунду на обработку, если нужно

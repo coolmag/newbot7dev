@@ -70,9 +70,12 @@ async def lifespan(app: FastAPI):
     except Exception as e: 
         logger.warning(f"Could not set bot commands: {e}")
 
-    webhook_url_with_path = f"{settings.WEBHOOK_URL.rstrip('/')}/telegram"
-    await tg_app.bot.set_webhook(url=webhook_url_with_path)
-    logger.info(f"✅ Bot started on {webhook_url_with_path}")
+    webhook_url = settings.WEBHOOK_URL.rstrip('/')
+    if not webhook_url.endswith('/telegram'):
+        webhook_url += '/telegram'
+
+    await tg_app.bot.set_webhook(url=webhook_url)
+    logger.info(f"✅ Bot started on {webhook_url}")
 
     # State
     app.state.tg_app = tg_app
