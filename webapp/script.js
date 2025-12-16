@@ -10,8 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const prevBtn = document.getElementById('btn-prev');
     const titleEl = document.getElementById('track-title');
     const artistEl = document.getElementById('track-artist');
-    const progressBar = document.querySelector('.progress-bar');
-    const progressFill = document.getElementById('progress-fill');
+    const progressBar = document.getElementById('progress-bar');
     const currTimeEl = document.getElementById('curr-time');
     const durTimeEl = document.getElementById('dur-time');
     const canvas = document.getElementById('visualizer');
@@ -24,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
 
-    // --- Audio Visualizer ---
     function initAudioVisualizer() {
         if (isVisualizerInitialized) return;
         try {
@@ -35,11 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
             analyser.connect(audioCtx.destination);
             analyser.fftSize = 128;
             dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            ctx.scale(dpr, dpr);
             isVisualizerInitialized = true;
             renderVisualizer();
         } catch(e) { console.warn("Audio Visualizer failed to initialize:", e); }
@@ -49,11 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(renderVisualizer);
         if (!analyser) return;
         analyser.getByteFrequencyData(dataArray);
-        const w = canvas.getBoundingClientRect().width;
-        const h = canvas.getBoundingClientRect().height;
-        const cx = w / 2;
-        const cy = h / 2;
-        const radius = 110;
+        const w = canvas.getBoundingClientRect().width, h = canvas.getBoundingClientRect().height;
+        const cx = w / 2, cy = h / 2, radius = 110;
         ctx.clearRect(0, 0, w, h);
         ctx.beginPath();
         for (let i = 0; i < dataArray.length; i++) {
@@ -76,10 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.stroke();
     }
 
-    // --- Controls & State ---
     function togglePlay() {
         if (audio.src && !audio.src.includes('undefined')) {
-            initAudioVisualizer(); // Init on first interaction
+            initAudioVisualizer();
             audio.paused ? audio.play().catch(e => console.warn("Play() failed:", e)) : audio.pause();
         }
     }
@@ -87,32 +76,28 @@ document.addEventListener('DOMContentLoaded', () => {
     audio.onplay = () => { playIcon.textContent = 'pause'; initAudioVisualizer(); };
     audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
     audio.onended = () => sendCommand('skip');
+    audio.onloadedmetadata = () => {
+        progressBar.max = audio.duration;
+        durTimeEl.textContent = formatTime(audio.duration);
+    };
 
     audio.ontimeupdate = () => {
-        if (audio.duration) {
-            const p = (audio.currentTime / audio.duration) * 100;
-            progressFill.style.width = `${p}%`;
-            currTimeEl.textContent = formatTime(audio.currentTime);
-            durTimeEl.textContent = formatTime(audio.duration);
-        }
+        progressBar.value = audio.currentTime;
+        currTimeEl.textContent = formatTime(audio.currentTime);
+        // Style the progress bar fill
+        const percentage = (audio.currentTime / audio.duration) * 100;
+        progressBar.style.background = `linear-gradient(to right, var(--primary) ${percentage}%, var(--glass-bg) ${percentage}%)`;
     };
 
     // --- Event Listeners ---
-    playBtn.addEventListener('click', () => { togglePlay(); if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
-    nextBtn.addEventListener('click', () => { sendCommand('skip'); titleEl.textContent = "Loading next..."; artistEl.textContent = "Please wait..."; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('medium'); });
-    prevBtn.addEventListener('click', () => { audio.currentTime = 0; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
+    playBtn.addEventListener('click', () => { togglePlay(); tg.HapticFeedback?.impactOccurred('light'); });
+    nextBtn.addEventListener('click', () => { sendCommand('skip'); titleEl.textContent = "Loading next..."; artistEl.textContent = "Please wait..."; tg.HapticFeedback?.impactOccurred('medium'); });
+    prevBtn.addEventListener('click', () => { audio.currentTime = 0; tg.HapticFeedback?.impactOccurred('light'); });
     
-    // ** ROBUST CLICK-TO-SEEK LOGIC **
-    progressBar.addEventListener('click', (e) => {
-        if (audio.duration) {
-            const rect = progressBar.getBoundingClientRect(); // Get bar's position and size
-            const offsetX = e.clientX - rect.left; // Calculate click position relative to the bar
-            const percentage = offsetX / rect.width; // Calculate percentage
-            audio.currentTime = percentage * audio.duration; // Set audio time
-        }
+    progressBar.addEventListener('input', () => {
+        audio.currentTime = progressBar.value;
     });
 
-    // --- Utils & API ---
     function formatTime(s) {
         if (isNaN(s)) return "0:00";
         const m = Math.floor(s / 60);
@@ -132,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) { console.error(`Failed to send command '${action}':`, e); }
         setTimeout(() => isCommandProcessing = false, 1000);
     }
-
+    
     async function syncWithBackend() {
         if (!chatId) return;
         try {
