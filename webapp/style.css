@@ -5,7 +5,6 @@
     --primary-glow: rgba(0, 255, 136, 0.5);
     --bg-dark: #0f0f13;
     --glass-bg: rgba(255, 255, 255, 0.05);
-    --glass-border: rgba(255, 255, 255, 0.1);
     --text-main: #ffffff;
     --text-sec: #8b8b9e;
 }
@@ -17,35 +16,25 @@ body {
     color: var(--text-main); height: 100dvh; display: flex; justify-content: center; align-items: center; overflow: hidden;
 }
 
-.background-glow {
-    position: absolute; width: 300px; height: 300px; background: var(--primary);
-    filter: blur(150px); border-radius: 50%; opacity: 0.2; z-index: 0;
-    animation: breathe 10s infinite ease-in-out;
-}
-@keyframes breathe { 0%, 100% { transform: scale(1); opacity: 0.2; } 50% { transform: scale(1.2); opacity: 0.3; } }
-
 .player-container {
     width: 100%; max-width: 400px; height: 100%; padding: 20px 30px; display: flex;
     flex-direction: column; justify-content: space-between; z-index: 1;
 }
-.header { display: flex; justify-content: space-between; align-items: center; height: 40px; color: #888; font-size: 12px; letter-spacing: 1px; }
+.header { display: flex; justify-content: space-between; align-items: center; height: 40px; color: #888; font-size: 12px; letter-spacing: 1px; flex-shrink: 0; }
 .header > .material-symbols-rounded { cursor: pointer; }
 
 .visualizer-wrapper {
     flex-grow: 1; display: flex; justify-content: center; align-items: center; position: relative;
-    width: 100%; /* Ensure wrapper has width */
+    min-height: 250px; /* Prevent collapsing */
 }
 .album-art {
     width: 220px; height: 220px; background: #1a1a20; border-radius: 50%;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5); display: flex; justify-content: center;
-    align-items: center; position: relative; z-index: 2; border: 2px solid var(--glass-border);
+    align-items: center; position: absolute; z-index: 2; border: 2px solid var(--glass-border);
 }
 .album-art::after { content: '🎵'; font-size: 60px; opacity: 0.5; }
 #visualizer {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 340px; height: 340px;
-    z-index: 1; pointer-events: none;
+    position: absolute; width: 340px; height: 340px; z-index: 1; pointer-events: none;
 }
 
 .track-info { text-align: center; margin-bottom: 30px; }
@@ -63,7 +52,7 @@ body {
 }
 .time-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-sec); margin-top: 8px; }
 
-.controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0; }
 .btn {
     width: 50px; height: 50px; border-radius: 50%; border: none; background: var(--glass-bg);
     color: var(--text-main); font-size: 20px; cursor: pointer; display: flex;

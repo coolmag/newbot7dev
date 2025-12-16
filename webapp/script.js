@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tg = window.Telegram.WebApp;
     tg.expand();
 
+    // DOM Elements
     const audio = document.getElementById('audio-player');
     const playBtn = document.getElementById('btn-play-pause');
     const playIcon = document.getElementById('icon-play');
@@ -16,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
 
+    // State
     let audioCtx, analyser, dataArray, isVisualizerInitialized = false;
     let currentTrackId = null, isCommandProcessing = false;
 
@@ -117,9 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     duration: audio.duration || 0,
                     position: audio.currentTime || 0,
                 });
-            } catch (e) {
-                // Ignore errors, some browsers might not support this fully.
-            }
+            } catch (e) { /* Ignore */ }
         }
     }
 
@@ -145,9 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) return;
             const data = await res.json();
             
-            // ** DEFENSIVE CODING **
             if (!data || !data.sessions) {
-                console.error("Invalid data structure from /api/radio/status", data);
+                console.error("Invalid data from /api/radio/status", data);
                 return;
             }
 
