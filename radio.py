@@ -28,6 +28,7 @@ class RadioSession:
     chat_type: str
     started_at: float = field(default_factory=time.time)
     current: Optional[TrackInfo] = None
+    current_file_path: Optional[Path] = None
     playlist: Deque[TrackInfo] = field(default_factory=deque)
     played_ids: Set[str] = field(default_factory=set)
     
@@ -97,6 +98,9 @@ class RadioManager:
             # Чистим файлы
             if session.next_file_path and Path(session.next_file_path).exists():
                 try: Path(session.next_file_path).unlink()
+                except: pass
+            if session.current_file_path and session.current_file_path.exists():
+                try: session.current_file_path.unlink()
                 except: pass
                 
             await self._update_dashboard(session, status="🛑 Эфир завершен")
@@ -185,6 +189,7 @@ class RadioManager:
 
                 # 3. Обновляем сессию
                 s.current = track_info
+                s.current_file_path = Path(file_path)
                 s.played_ids.add(track_info.identifier)
                 if len(s.played_ids) > 200: s.played_ids = set(list(s.played_ids)[-50:])
 

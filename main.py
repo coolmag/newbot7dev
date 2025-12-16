@@ -143,10 +143,10 @@ async def get_audio(track_id: str):
     radio = app.state.radio
     for s in radio._sessions.values():
         if s.current and s.current.identifier == track_id:
-            if s.audio_file_path and s.audio_file_path.exists():
+            if s.current_file_path and s.current_file_path.exists():
                 return FileResponse(
-                    s.audio_file_path,
-                    media_type=audio_mime_for(s.audio_file_path),
+                    s.current_file_path,
+                    media_type=audio_mime_for(s.current_file_path),
                     headers={"Access-Control-Allow-Origin": "*"}
                 )
     raise HTTPException(status_code=404)
