@@ -84,69 +84,71 @@ class YouTubeDownloader:
         **kwargs,
     ) -> List[TrackInfo]:
         """
-        Умный поиск с фильтрацией сборок и нерелевантного контента.
+        Продвинутый поиск с использованием фильтрации на стороне yt-dlp.
         """
-        # Минус-слова для YouTube, чтобы отсеять мусор на уровне запроса
-        negative_keywords = [
-            "-live", "-stream", "-lyrics",
-            '"-10 hours"', '"-full album"', "-compilation", "-playlist",
-            '"-top 50"', '"-top 100"', "-mix"
+        # 1. Формирование поискового запроса
+        # Добавляем "audio", чтобы повысить релевантность
+        search_query = f"ytsearch{limit}:{query} audio"
+
+        # 2. Формирование мощного фильтра для yt-dlp
+        # Этот фильтр будет применяться на серверах YouTube, что очень эффективно.
+        base_filter = [
+            "!is_live", # Исключаем прямые трансляции
+            "duration >= 120", # Длительность от 2 минут
+            "duration <= 900", # Длительность до 15 минут
+            "view_count > 1000", # Отсеиваем совсем непопулярные/мусорные видео
         ]
-        clean_query = f'{query} {" ".join(negative_keywords)}'
-        search_query = f"ytsearch{limit * 2}:{clean_query}"
-        opts = self._get_opts(mode="search")
+
+        # Негативные ключевые слова в названии (без учета регистра)
+        negative_keywords = [
+            'cover', 'remix', 'mashup', 'live', 'concert', 'концерт', 'acoustic', 
+            'karaoke', 'караоке', 'instrumental', 'минус', 'минусовка', 'vlog', 
+            'влог', 'interview', 'пародия', 'parody', '10 hours', '24/7',
+            'top 10', 'top 50', 'top 100', 'playlist', 'сборник', 'mix', 'микс'
+        ]
+        # Используем title!~='(?i)word' для регистронезависимого поиска
+        base_filter.extend([f"title!~='(?i){re.escape(word)}'" for word in negative_keywords])
+
+        # Собираем все в одну строку
+        combined_filter = " & ".join(base_filter)
+        
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "extract_flat": True, # Не получаем полную информацию, только список видео
+            "match_filter": yt_dlp.utils.match_filter_func(combined_filter)
+        }
 
         try:
-            info = await self._extract_info(search_query, opts)
+            logger.info(f"[Search] Выполняю поиск с фильтром: {combined_filter}")
+            info = await self._extract_info(search_query, ydl_opts)
             entries = info.get("entries", []) or []
 
+            if not entries:
+                logger.warning(f"[Search] Продвинутый поиск для '{query}' не дал результатов. Пробую без фильтра...")
+                del ydl_opts["match_filter"]
+                info = await self._extract_info(search_query, ydl_opts)
+                entries = info.get("entries", []) or []
+
             out: List[TrackInfo] = []
-            
-            # Черный список для дополнительной фильтрации по названию
-            BANNED = [
-                '10 hours', '8 hours', '1 hour', 'mix', 'remix compilation', 
-                'full album', 'playlist', 'compilation', 'live radio', 
-                '24/7', 'stream', 'non-stop', 'top 10', 'top 20', 'top 50', 
-                'top 100', 'chart', 'best of', 'mashup', 'billboard', 'hot 100'
-            ]
-
             for e in entries:
-                if not e: continue
-                vid_id = e.get("id")
-                title = e.get("title", "")
-                
-                if not vid_id: continue
-
-                # Фильтр по названию
-                if any(b in title.lower() for b in BANNED):
+                if not e or not e.get("id"):
                     continue
-
-                duration = e.get("duration")
-                
-                # Если длительность известна, проверяем
-                if duration:
-                    duration = int(duration)
-                    if duration > 900: continue # > 15 мин
-                    if duration < 120: continue # < 2 мин
-                
-                # Если длительность 0 или None - пропускаем (обычно это стримы)
-                elif "radio" in title.lower() or "live" in title.lower():
-                    continue
-
                 out.append(
                     TrackInfo(
-                        title=title, # Сохраняем оригинальное название
+                        title=e.get("title", "Unknown"),
                         artist=e.get("uploader") or "Unknown",
-                        duration=duration or 0,
+                        duration=int(e.get("duration", 0)),
                         source=Source.YOUTUBE.value,
-                        identifier=vid_id,
+                        identifier=e["id"],
                     )
                 )
-                if len(out) >= limit: break
+            logger.info(f"[Search] Найдено {len(out)} треков для запроса '{query}'")
             return out
 
         except Exception as e:
-            logger.error(f"Search error: {e}")
+            logger.error(f"Search error: {e}", exc_info=True)
             return []
 
     async def download_with_retry(self, query: str) -> DownloadResult:
