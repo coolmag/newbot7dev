@@ -78,8 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Controls & State ---
     function togglePlay() {
-        initAudioVisualizer();
         if (audio.src && !audio.src.includes('undefined')) {
+            initAudioVisualizer(); // Init on first interaction
             audio.paused ? audio.play().catch(e => console.warn("Play() failed:", e)) : audio.pause();
         }
     }
@@ -102,13 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
     nextBtn.addEventListener('click', () => { sendCommand('skip'); titleEl.textContent = "Loading next..."; artistEl.textContent = "Please wait..."; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('medium'); });
     prevBtn.addEventListener('click', () => { audio.currentTime = 0; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
     
-    // ** SIMPLIFIED & ROBUST SEEK ON CLICK **
+    // ** ROBUST CLICK-TO-SEEK LOGIC **
     progressBar.addEventListener('click', (e) => {
         if (audio.duration) {
-            const rect = progressBar.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const percentage = offsetX / rect.width;
-            audio.currentTime = percentage * audio.duration;
+            const rect = progressBar.getBoundingClientRect(); // Get bar's position and size
+            const offsetX = e.clientX - rect.left; // Calculate click position relative to the bar
+            const percentage = offsetX / rect.width; // Calculate percentage
+            audio.currentTime = percentage * audio.duration; // Set audio time
         }
     });
 
