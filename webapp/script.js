@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const prevBtn = document.getElementById('btn-prev');
     const titleEl = document.getElementById('track-title');
     const artistEl = document.getElementById('track-artist');
+    const progressBar = document.querySelector('.progress-bar'); // Get the container
     const progressFill = document.getElementById('progress-fill');
     const currTimeEl = document.getElementById('curr-time');
     const durTimeEl = document.getElementById('dur-time');
@@ -88,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.stroke();
     }
 
-    // --- Controls & State Management (The Core Fix) ---
+    // --- Controls & State Management ---
     function togglePlay() {
         initAudioVisualizer();
         if (audio.src && !audio.src.includes('undefined')) {
@@ -100,46 +101,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // UI updates are now driven by the audio element itself - this is the source of truth.
-    audio.onplay = () => {
-        playIcon.textContent = 'pause';
-    };
-
-    audio.onpause = () => {
-        playIcon.textContent = 'play_arrow';
-    };
-
-    audio.onended = () => {
-        // When one track ends, immediately request the next one.
-        sendCommand('skip');
-    };
+    // UI updates driven by the audio element
+    audio.onplay = () => { playIcon.textContent = 'pause'; };
+    audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
+    audio.onended = () => { sendCommand('skip'); };
 
     audio.ontimeupdate = () => {
-        const p = (audio.currentTime / audio.duration) * 100;
-        progressFill.style.width = `${p}%`;
-        currTimeEl.textContent = formatTime(audio.currentTime);
-        durTimeEl.textContent = formatTime(audio.duration || 0);
+        if (audio.duration) {
+            const p = (audio.currentTime / audio.duration) * 100;
+            progressFill.style.width = `${p}%`;
+            currTimeEl.textContent = formatTime(audio.currentTime);
+            durTimeEl.textContent = formatTime(audio.duration);
+        }
     };
 
+    // --- Event Listeners ---
     playBtn.addEventListener('click', () => {
         togglePlay();
-        if(tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
+        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
     });
     
     nextBtn.addEventListener('click', () => {
         sendCommand('skip');
         titleEl.textContent = "Loading next...";
         artistEl.textContent = "Please wait...";
-        if(tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('medium');
+        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('medium');
     });
 
     prevBtn.addEventListener('click', () => {
         audio.currentTime = 0;
-        if(tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
+        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
+    });
+
+    // ** NEW: Seek on progress bar click **
+    progressBar.addEventListener('click', (e) => {
+        if (audio.duration) {
+            const barWidth = progressBar.clientWidth;
+            const clickX = e.offsetX;
+            const seekTime = (clickX / barWidth) * audio.duration;
+            audio.currentTime = seekTime;
+        }
     });
 
     // --- Utils ---
     function formatTime(s) {
+        if (isNaN(s)) return "0:00";
         const m = Math.floor(s / 60);
         const sec = Math.floor(s % 60);
         return `${m}:${sec < 10 ? '0'+sec : sec}`;
@@ -158,7 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) {
             console.error(`Failed to send command '${action}':`, e);
         }
-        // Give the backend time to process before allowing another command
         setTimeout(() => isCommandProcessing = false, 1000);
     }
 
@@ -166,33 +171,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chatId) return;
         try {
             const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
-            if (!res.ok) return; // Don't process bad responses
+            if (!res.ok) return; 
 
             const data = await res.json();
             const session = data.sessions[chatId];
 
             if (session && session.current) {
-                // Update text only if it has changed
                 if (titleEl.textContent !== session.current.title) {
                     titleEl.textContent = session.current.title;
                     artistEl.textContent = session.current.artist;
                 }
 
-                // Update audio source only if track ID has changed
                 if (session.current.identifier && currentTrackId !== session.current.identifier) {
                     currentTrackId = session.current.identifier;
                     audio.src = session.current.audio_url;
-                    audio.load(); // Explicitly load the new source
+                    audio.load();
                     
-                    // Attempt to play the new track.
                     audio.play().catch(e => {
-                        // This is expected if autoplay is blocked by the browser.
-                        // The UI will correctly show the 'play' icon because the 'onpause' event will fire.
                         console.warn("Autoplay was prevented by the browser.");
                     });
                 }
             } else {
-                 // No session or no current track, reset UI
                 titleEl.textContent = "Radio Stopped";
                 artistEl.textContent = "Select a genre in chat";
                 if (!audio.paused) audio.pause();
