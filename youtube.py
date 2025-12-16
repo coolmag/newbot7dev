@@ -219,8 +219,29 @@ class YouTubeDownloader:
             logger.error(f"Critical DL error: {e}", exc_info=True)
             return DownloadResult(success=False, error=str(e))
 
-async def download_with_retry(self, query: str) -> DownloadResult:
-    # Этот метод был в вашем примере, но он дублирует логику в RadioManager. 
-    # Для чистоты кода лучше оставить управление попытками в RadioManager.
-    # Поэтому этот метод не используется, но оставлен для справки.
-    pass
+    async def download_with_retry(self, query: str) -> DownloadResult:
+        """
+        Выполняет загрузку с несколькими попытками в случае сбоя.
+        """
+        for attempt in range(self._settings.MAX_RETRIES):
+            try:
+                async with self.semaphore:
+                    result = await self.download(query)
+                if result and result.success:
+                    return result
+                
+                # Специальная обработка для 503 ошибки, чтобы подождать подольше
+                if result and result.error and "503" in result.error:
+                    logger.warning("[Downloader] Получен код 503 от сервера. Большая пауза...")
+                    await asyncio.sleep(60 * (attempt + 1))
+
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.error(f"[Downloader] Исключение при загрузке (попытка {attempt + 1}): {e}", exc_info=True)
+            
+            if attempt < self._settings.MAX_RETRIES - 1:
+                await asyncio.sleep(self._settings.RETRY_DELAY_S * (attempt + 1))
+
+        return DownloadResult(
+            success=False,
+            error=f"Не удалось скачать после {self._settings.MAX_RETRIES} попыток.",
+        )
