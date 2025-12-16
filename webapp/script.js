@@ -2,7 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const tg = window.Telegram.WebApp;
     tg.expand();
 
-    // DOM Elements
     const audio = document.getElementById('audio-player');
     const playBtn = document.getElementById('btn-play-pause');
     const playIcon = document.getElementById('icon-play');
@@ -17,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
 
-    // State
     let audioCtx, analyser, dataArray, isVisualizerInitialized = false;
     let currentTrackId = null, isCommandProcessing = false;
 
@@ -37,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isVisualizerInitialized = true;
             renderVisualizer();
         } catch (e) {
-            console.warn("Audio Visualizer failed to initialize. User interaction may be required.", e);
+            console.warn("Audio Visualizer failed to initialize.", e);
         }
     }
 
@@ -113,11 +111,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function updatePositionState() {
-        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-            navigator.mediaSession.setPositionState({
-                duration: audio.duration || 0,
-                position: audio.currentTime || 0,
-            });
+        if ('mediaSession' in navigator && navigator.mediaSession.metadata) {
+             try {
+                navigator.mediaSession.setPositionState({
+                    duration: audio.duration || 0,
+                    position: audio.currentTime || 0,
+                });
+            } catch (e) {
+                // Ignore errors, some browsers might not support this fully.
+            }
         }
     }
 
@@ -142,6 +144,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
             if (!res.ok) return;
             const data = await res.json();
+            
+            // ** DEFENSIVE CODING **
+            if (!data || !data.sessions) {
+                console.error("Invalid data structure from /api/radio/status", data);
+                return;
+            }
+
             const session = data.sessions[chatId];
             if (session?.current) {
                 if (currentTrackId !== session.current.identifier) {
