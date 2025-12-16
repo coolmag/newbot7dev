@@ -13,7 +13,6 @@ from cache import CacheService
 
 logger = logging.getLogger(__name__)
 
-
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
@@ -58,53 +57,34 @@ class YouTubeDownloader:
     async def search(self, query: str, limit: int = 30, **kwargs) -> List[TrackInfo]:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
 
-        def filter_entry(e: Dict[str, Any], strict_mode: bool) -> bool:
-            if not e or not e.get("id") or not e.get("title"): return False
+        def filter_entry(e: Dict[str, Any]) -> bool:
+            if not (e and e.get("id") and e.get("title")): return False
             title = e.get('title', '').lower()
-            duration = int(e.get('duration') or 0)
-
-            if not (120 <= duration <= 900): return False
-
+            
             BANNED_WORDS = [
                 'cover', 'live', 'concert', 'концерт', 'acoustic', 'karaoke', 'караоке', 
                 'instrumental', 'минус', 'vlog', 'влог', 'interview', 'пародия', 'reaction',
-                'playlist', 'сборник', 'mix', 'микс', 'чарт', 'chart', 'billboard', 
-                'hot 100', 'top', 'топ', 'hits', 'хиты'
+                'playlist', 'сборник', 'mix', 'микс', 'чарт', 'chart', 'billboard', 'hot 100',
+                'top', 'топ', 'hits', 'хиты', 'mashup'
             ]
             if any(banned in title for banned in BANNED_WORDS): return False
             if title.count(',') > 3 and "official" not in title: return False
-
-            if strict_mode:
-                is_good_title = any(kw in title for kw in ['audio', 'lyric', 'альбом', 'официальный'])
-                is_music_category = "Music" in e.get("categories", [])
-                if not (is_good_title or is_music_category): return False
-            
             return True
 
         opts = self._get_opts("search")
-        opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
-
+        opts['match_filter'] = yt_dlp.utils.match_filter_func(
+            f"duration >= 120 & duration <= 900 & !is_live"
+        )
+        
         try:
-            # Этап 1: Строгий поиск
-            strict_query = f"ytsearch{limit}:{query} official audio"
-            info = await self._extract_info(strict_query, opts)
-            entries = [e for e in info.get("entries", []) or [] if filter_entry(e, strict_mode=True)]
+            # Ищем с запасом, чтобы было из чего фильтровать
+            info = await self._extract_info(f"ytsearch{limit*2}:{query}", opts)
+            entries = info.get("entries", []) or []
             
-            # Этап 2: Если результатов мало, делаем общий поиск
-            if len(entries) < limit:
-                logger.info(f"[Search] Строгий поиск дал мало результатов ({len(entries)}). Перехожу к общему.")
-                fallback_query = f"ytsearch{limit}:{query}"
-                info = await self._extract_info(fallback_query, opts)
-                
-                # Добавляем новые результаты и фильтруем в мягком режиме
-                all_entries = entries + (info.get("entries", []) or [])
-                entries = [e for e in all_entries if filter_entry(e, strict_mode=False)]
-
-            unique_entries = {e['id']: e for e in entries}.values()
+            clean_tracks = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
             
-            results = [TrackInfo.from_yt_info(e) for e in unique_entries]
-            logger.info(f"[Search] Финальный результат: {len(results)} треков для запроса '{query}'")
-            return results[:limit]
+            logger.info(f"[Search] Найдено и отфильтровано {len(clean_tracks)} треков для '{query}'")
+            return clean_tracks[:limit]
 
         except Exception as e:
             logger.error(f"[Search] Критическая ошибка поиска: {e}", exc_info=True)
@@ -129,20 +109,16 @@ class YouTubeDownloader:
 
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             
-            # Этап 1: Предварительная проверка метаданных
             info = await self._extract_info(video_url, self._get_opts("search"))
             
-            duration = info.get('duration', 0)
-            if not (120 <= duration <= 900):
-                return DownloadResult(success=False, error=f"Трек имеет недопустимую длительность ({duration}с).")
-
             max_size_bytes = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
             filesize = info.get('filesize_approx') or info.get('filesize')
             if filesize and filesize > max_size_bytes:
-                return DownloadResult(success=False, error=f"Файл слишком большой ({filesize / (1024*1024):.1f} MB).")
+                err_msg = f"Видео слишком большое ({filesize / (1024*1024):.1f} MB)."
+                logger.warning(err_msg)
+                return DownloadResult(success=False, error=err_msg)
 
-            # Этап 2: Скачивание
-            download_opts = self._get_opts("download")
+            download_opts = self._get_opts(mode="download")
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(download_opts).download([video_url]))
 
@@ -150,7 +126,6 @@ class YouTubeDownloader:
             if not final_path:
                 return DownloadResult(success=False, error="Файл не найден после скачивания.")
             
-            # Этап 3: Финальная проверка размера
             if Path(final_path).stat().st_size > max_size_bytes:
                 Path(final_path).unlink()
                 return DownloadResult(success=False, error="Финальный файл превысил лимит размера.")
@@ -159,7 +134,6 @@ class YouTubeDownloader:
             result = DownloadResult(True, str(final_path), track_info)
             await self._cache.set(cache_key, Source.YOUTUBE, result)
             return result
-
         except Exception as e:
             logger.error(f"Критическая ошибка скачивания: {e}", exc_info=True)
             return DownloadResult(success=False, error=str(e))
@@ -167,11 +141,8 @@ class YouTubeDownloader:
     async def download_with_retry(self, query: str) -> DownloadResult:
         for attempt in range(self._settings.MAX_RETRIES):
             try:
-                async with self.semaphore:
-                    result = await self.download(query)
+                result = await self.download(query)
                 if result.success: return result
-                if result.error and "503" in result.error:
-                    await asyncio.sleep(60)
             except Exception as e:
                 logger.error(f"[Downloader] Попытка {attempt + 1}: {e}", exc_info=True)
             
