@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // State
     let audioCtx, analyser, dataArray, isVisualizerInitialized = false;
-    let currentTrackId = null, isCommandProcessing = false, isSeeking = false;
+    let currentTrackId = null, isCommandProcessing = false;
 
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderVisualizer() {
         requestAnimationFrame(renderVisualizer);
-        if (!analyser || isSeeking) return; // Pause visualizer while seeking
+        if (!analyser) return;
         analyser.getByteFrequencyData(dataArray);
         const w = canvas.getBoundingClientRect().width;
         const h = canvas.getBoundingClientRect().height;
@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     audio.onended = () => sendCommand('skip');
 
     audio.ontimeupdate = () => {
-        if (audio.duration && !isSeeking) {
+        if (audio.duration) {
             const p = (audio.currentTime / audio.duration) * 100;
             progressFill.style.width = `${p}%`;
             currTimeEl.textContent = formatTime(audio.currentTime);
@@ -97,39 +97,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Robust Seek Bar (Scrubbing) ---
-    function seek(e) {
-        if (!audio.duration) return;
-        const rect = progressBar.getBoundingClientRect();
-        const offsetX = e.clientX - rect.left;
-        const width = rect.width;
-        const percentage = Math.max(0, Math.min(1, offsetX / width));
-        audio.currentTime = percentage * audio.duration;
-        // Immediately update UI for responsiveness
-        progressFill.style.width = `${percentage * 100}%`;
-    }
-
-    progressBar.addEventListener('mousedown', (e) => {
-        isSeeking = true;
-        seek(e);
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (isSeeking) {
-            seek(e);
-        }
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isSeeking) {
-            isSeeking = false;
-        }
-    });
-    
-    // --- Other Listeners ---
+    // --- Event Listeners ---
     playBtn.addEventListener('click', () => { togglePlay(); if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
     nextBtn.addEventListener('click', () => { sendCommand('skip'); titleEl.textContent = "Loading next..."; artistEl.textContent = "Please wait..."; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('medium'); });
     prevBtn.addEventListener('click', () => { audio.currentTime = 0; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
+    
+    // ** SIMPLIFIED & ROBUST SEEK ON CLICK **
+    progressBar.addEventListener('click', (e) => {
+        if (audio.duration) {
+            const rect = progressBar.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left;
+            const percentage = offsetX / rect.width;
+            audio.currentTime = percentage * audio.duration;
+        }
+    });
 
     // --- Utils & API ---
     function formatTime(s) {
