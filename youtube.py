@@ -74,40 +74,68 @@ class YouTubeDownloader:
         """
         logger.info(f"[Search] Запуск поиска для: '{query}'")
 
-        # --- Фильтры качества на основе предоставленного кода ---
-        def is_high_quality(e: Dict[str, Any]) -> bool:
+        # --- Вспомогательная функция для фильтрации на Python ---
+        def filter_entry(e: Dict[str, Any], strict_mode: bool = True) -> bool:
             title = e.get('title', '').lower()
-            # Убираем проверку канала, т.к. она ненадежна
-            
-            is_good_title = any(kw in title for kw in ['audio', 'lyric', 'альбом', 'album', 'официальный'])
-            is_bad_title = any(kw in title for kw in [
-                'live', 'концерт', 'выступление', 'official video', 'music video', 
-                'full show', 'interview', 'parody', 'влог', 'vlog', 'топ', 'mix', 
-                'сборник', 'playlist', 'чарт', 'billboard', 'hot 100', 'песен', 'песни'
-            ])
-            
-            return is_good_title and not is_bad_title
+            uploader = e.get('uploader', '').lower()
+            duration = int(e.get('duration', 0))
+
+            # Базовые проверки длительности
+            if not (120 <= duration <= 900): # От 2 до 15 минут
+                return False
+
+            # Стоп-слова (черный список)
+            BANNED_WORDS = [
+                'cover', 'remix', 'mashup', 'live', 'concert', 'концерт', 
+                'acoustic', 'karaoke', 'караоке', 'instrumental', 'минус', 
+                'минусовка', 'vlog', 'влог', 'interview', 'пародия', 'parody', 
+                '10 hours', '24/7', 'top 10', 'top 50', 'top 100', 'playlist', 
+                'сборник', 'mix', 'чарт', 'billboard', 'hot 100', 'песен', 'песни',
+                'reaction', 'реакция', 'tutorial', 'how to'
+            ]
+            if any(banned_word in title for banned_word in BANNED_WORDS):
+                return False
+
+            # Если несколько исполнителей в названии (обычно сборники)
+            if title.count(',') > 2 and "official" not in title and "audio" not in title: # Смягченный вариант
+                return False
+
+            # Дополнительные строгие проверки для режима "строгого поиска"
+            if strict_mode:
+                is_good_title_keywords = any(kw in title for kw in ['official audio', 'topic', 'album', 'официальный'])
+                is_good_uploader_keywords = any(kw in uploader for kw in ['vevo', 'official', 'topic'])
+                is_music_category = isinstance(e.get("categories"), list) and "Music" in e.get("categories", [])
+                
+                # Должно быть что-то из хороших признаков
+                if not (is_good_title_keywords or is_good_uploader_keywords or is_music_category):
+                    return False
+
+            return True
+
+        # --- Общие параметры yt-dlp для поиска ---
+        common_search_opts = self._get_opts("search")
+        common_match_filter = yt_dlp.utils.match_filter_func(
+            f"duration >= 120 & duration <= 900 & !is_live" # Только базовая фильтрация на стороне yt-dlp
+        )
+        common_search_opts['match_filter'] = common_match_filter
+
 
         # --- Этап 1: Строгий поиск качественного контента ---
         try:
             # Ищем чуть больше, чтобы было из чего выбрать
-            strict_query = f"ytsearch10:{query} official audio"
-            opts = self._get_opts("search")
-            opts['match_filter'] = yt_dlp.utils.match_filter_func(
-                f"duration >= 120 & duration <= 900 & view_count > 1000 & !is_live"
-            )
-            
-            info = await self._extract_info(strict_query, opts)
+            strict_yt_query = f"ytsearch20:{query} official audio" # Добавил "official audio"
+            info = await self._extract_info(strict_yt_query, common_search_opts)
             entries = info.get("entries", []) or []
             
-            high_quality_entries = [e for e in entries if is_high_quality(e)]
+            # Применяем Python-фильтр
+            filtered_entries = [e for e in entries if e and e.get("id") and e.get("title") and filter_entry(e, strict_mode=True)]
             
-            if high_quality_entries:
-                logger.info(f"[Search] Строгий поиск успешен. Найдено {len(high_quality_entries)} качественных треков.")
+            if filtered_entries:
+                logger.info(f"[Search] Строгий поиск успешен. Найдено {len(filtered_entries)} качественных треков.")
                 results = []
-                for e in high_quality_entries[:limit]:
+                for e in filtered_entries[:limit]:
                     results.append(TrackInfo(
-                        title=e.get("title", "Unknown"),
+                        title=e["title"],
                         artist=e.get("uploader") or "Unknown",
                         duration=int(e.get("duration", 0)),
                         source=Source.YOUTUBE.value,
@@ -116,35 +144,33 @@ class YouTubeDownloader:
                 return results
 
         except Exception as e:
-            logger.warning(f"[Search] Ошибка на этапе строгого поиска: {e}")
+            logger.warning(f"[Search] Ошибка на этапе строгого поиска: {e}. Перехожу к общему поиску.")
 
         # --- Этап 2: Запасной вариант (Fallback) ---
         logger.info("[Search] Строгий поиск не дал результатов, перехожу к общему поиску.")
         try:
-            fallback_query = f"ytsearch{limit}:{query}"
-            opts = self._get_opts("search")
-            opts['match_filter'] = yt_dlp.utils.match_filter_func(
-                 f"duration >= 120 & duration <= 900 & !is_live"
-            )
-            info = await self._extract_info(fallback_query, opts)
+            fallback_yt_query = f"ytsearch{limit * 2}:{query}" # Ищем больше, чтобы было из чего выбрать
+            info = await self._extract_info(fallback_yt_query, common_search_opts) # Используем тот же базовый фильтр
             entries = info.get("entries", []) or []
 
-            # Здесь фильтрация уже не такая строгая
-            results = []
-            for e in entries:
-                title = e.get('title', '').lower()
-                if any(kw in title for kw in ['сборник', 'playlist', 'mix', 'топ 100']):
-                    continue
-                results.append(TrackInfo(
-                    title=e.get("title", "Unknown"),
-                    artist=e.get("uploader") or "Unknown",
-                    duration=int(e.get("duration", 0)),
-                    source=Source.YOUTUBE.value,
-                    identifier=e["id"],
-                ))
+            # Применяем Python-фильтр в менее строгом режиме
+            filtered_entries = [e for e in entries if e and e.get("id") and e.get("title") and filter_entry(e, strict_mode=False)]
+
+            if filtered_entries:
+                logger.info(f"[Search] Общий поиск успешен. Найдено {len(filtered_entries)} треков.")
+                results = []
+                for e in filtered_entries[:limit]:
+                    results.append(TrackInfo(
+                        title=e["title"],
+                        artist=e.get("uploader") or "Unknown",
+                        duration=int(e.get("duration", 0)),
+                        source=Source.YOUTUBE.value,
+                        identifier=e["id"],
+                    ))
+                return results
             
-            logger.info(f"[Search] Общий поиск вернул {len(results)} треков.")
-            return results
+            logger.warning(f"[Search] Поиск по запросу '{query}' не дал никаких результатов после фильтрации.")
+            return []
 
         except Exception as e:
             logger.error(f"[Search] Критическая ошибка на этапе общего поиска: {e}", exc_info=True)
@@ -172,8 +198,31 @@ class YouTubeDownloader:
 
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             opts = self._get_opts(mode="download")
-            
+
+            # --- Step 1: Get info without downloading to check size ---
             loop = asyncio.get_running_loop()
+            info_opts = self._get_opts(mode="search") # Use search mode opts to avoid download side effects
+            try:
+                # Use a short timeout for info extraction
+                info = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(info_opts).extract_info(video_url, download=False)),
+                    timeout=10.0 # Short timeout for info
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Таймаут получения информации о видео {video_id}. Пропускаю.")
+                return DownloadResult(success=False, error="Таймаут получения информации о видео.")
+            except Exception as e:
+                logger.warning(f"Ошибка получения информации о видео {video_id}: {e}. Продолжаю попытку скачивания.")
+                info = None # Clear info to proceed with download
+            
+            if info:
+                filesize = info.get('filesize') or info.get('filesize_approx')
+                if filesize and filesize > self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024:
+                    err_msg = f"Видео слишком большое ({filesize / (1024*1024):.1f} MB), превышает лимит в {self._settings.PLAY_MAX_FILE_SIZE_MB} MB."
+                    logger.warning(err_msg)
+                    return DownloadResult(success=False, error=err_msg)
+
+            # --- Step 2: Proceed with download if size is acceptable or unknown ---
             try:
                 await asyncio.wait_for(
                     loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([video_url])),
@@ -182,13 +231,24 @@ class YouTubeDownloader:
             except asyncio.TimeoutError:
                  return DownloadResult(success=False, error="Таймаут скачивания.")
             except Exception as e:
-                if "File is larger" in str(e):
-                    return DownloadResult(success=False, error="Файл слишком большой.")
-                raise e
+                # This exception might still be caught by the outer try-except, if yt-dlp raises
+                # an error for filesize.
+                if "File is larger" in str(e) or "exceeds max-filesize" in str(e):
+                    return DownloadResult(success=False, error=f"Файл слишком большой ( > {self._settings.PLAY_MAX_FILE_SIZE_MB}MB).")
+                raise e # Re-raise other exceptions to be caught by outer block.
 
+            # ... rest of download logic (find file, extract metadata, cache) ...
             final_path = self._find_downloaded_file(video_id)
             if not final_path:
                 return DownloadResult(success=False, error="Файл не скачался (возможно, стрим).")
+            
+            # --- Step 3: Post-download size check (redundant but safe) ---
+            actual_size = Path(final_path).stat().st_size
+            if actual_size > self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024:
+                err_msg = f"Файл {final_path} скачался слишком большим ({actual_size / (1024*1024):.1f} MB)."
+                logger.error(err_msg)
+                Path(final_path).unlink() # Delete the oversized file
+                return DownloadResult(success=False, error=err_msg)
 
             track_info = None
             json_path = self._settings.DOWNLOADS_DIR / f"{video_id}.info.json"
