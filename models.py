@@ -61,7 +61,7 @@ class TrackInfo:
         return TrackInfo(
             title=info.get("title", "Unknown"),
             artist=info.get("channel", info.get("uploader", "Unknown")),
-            duration=int(info.get("duration", 0)),
+            duration=int(info.get("duration") or 0),
             source=Source.YOUTUBE.value,
             identifier=info["id"],
             view_count=info.get("view_count"),

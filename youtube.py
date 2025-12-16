@@ -13,6 +13,7 @@ from cache import CacheService
 
 logger = logging.getLogger(__name__)
 
+
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
@@ -60,25 +61,26 @@ class YouTubeDownloader:
         def filter_entry(e: Dict[str, Any]) -> bool:
             if not (e and e.get("id") and e.get("title")): return False
             title = e.get('title', '').lower()
-            
+            duration = int(e.get('duration') or 0)
+
+            if not (120 <= duration <= 900): return False
+
             BANNED_WORDS = [
                 'cover', 'live', 'concert', 'концерт', 'acoustic', 'karaoke', 'караоке', 
                 'instrumental', 'минус', 'vlog', 'влог', 'interview', 'пародия', 'reaction',
-                'playlist', 'сборник', 'mix', 'микс', 'чарт', 'chart', 'billboard', 'hot 100',
-                'top', 'топ', 'hits', 'хиты', 'mashup'
+                'playlist', 'сборник', 'mix', 'микс', 'чарт', 'chart', 'billboard', 
+                'hot 100', 'top', 'топ', 'hits', 'хиты', 'mashup'
             ]
             if any(banned in title for banned in BANNED_WORDS): return False
             if title.count(',') > 3 and "official" not in title: return False
             return True
 
         opts = self._get_opts("search")
-        opts['match_filter'] = yt_dlp.utils.match_filter_func(
-            f"duration >= 120 & duration <= 900 & !is_live"
-        )
+        opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
         
         try:
             # Ищем с запасом, чтобы было из чего фильтровать
-            info = await self._extract_info(f"ytsearch{limit*2}:{query}", opts)
+            info = await self._extract_info(f"ytsearch{limit*3}:{query}", opts)
             entries = info.get("entries", []) or []
             
             clean_tracks = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
