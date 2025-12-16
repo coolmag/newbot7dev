@@ -107,7 +107,7 @@ class YouTubeDownloader:
                 '10 hours', '8 hours', '1 hour', 'mix', 'remix compilation', 
                 'full album', 'playlist', 'compilation', 'live radio', 
                 '24/7', 'stream', 'non-stop', 'top 10', 'top 20', 'top 50', 
-                'top 100', 'hits', 'chart', 'best of', 'mashup', 'billboard', 'hot 100'
+                'top 100', 'chart', 'best of', 'mashup', 'billboard', 'hot 100'
             ]
 
             for e in entries:
@@ -117,12 +117,8 @@ class YouTubeDownloader:
                 
                 if not vid_id: continue
 
-                # --- Строгие фильтры ---
-                # 1. По черному списку
+                # Фильтр по названию
                 if any(b in title.lower() for b in BANNED):
-                    continue
-                # 2. Эвристика на перечисление артистов в названии
-                if title.count(',') > 3:
                     continue
 
                 duration = e.get("duration")
