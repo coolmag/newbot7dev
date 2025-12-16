@@ -1,24 +1,34 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // === SETUP ===
-    let audioCtx, analyser, dataArray, canvas, ctx;
-    let isPlaying = false;
-    let currentTrackId = null;
-    let isInitialized = false;
-    let isCommandProcessing = false;
-
-    // DOM
-    const audio = document.getElementById('audio-player');
-    const timeDisplay = document.getElementById('time-display');
-    const trackTitle = document.getElementById('track-title');
-    const playlistDiv = document.getElementById('playlist');
     const tg = window.Telegram.WebApp;
     tg.expand();
 
-    // Query Params
+    // DOM
+    const audio = document.getElementById('audio-player');
+    const playBtn = document.getElementById('btn-play-pause');
+    const playIcon = document.getElementById('icon-play');
+    const nextBtn = document.getElementById('btn-next');
+    const prevBtn = document.getElementById('btn-prev');
+    const titleEl = document.getElementById('track-title');
+    const artistEl = document.getElementById('track-artist');
+    const progressFill = document.getElementById('progress-fill');
+    const currTimeEl = document.getElementById('curr-time');
+    const durTimeEl = document.getElementById('dur-time');
+    const playlistBtn = document.getElementById('btn-playlist');
+    const drawer = document.getElementById('playlist-drawer');
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+
+    // State
+    let audioCtx, analyser, dataArray;
+    let isPlaying = false;
+    let isInitialized = false;
+    let currentId = null;
+    let isCommandProcessing = false;
+
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
 
-    // === WINAMP VISUALIZER ===
+    // === CIRCULAR VISUALIZER ===
     function initAudio() {
         if (isInitialized) return;
         try {
@@ -28,15 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
             source.connect(analyser);
             analyser.connect(audioCtx.destination);
             
-            // 32 полосы для классического вида
-            analyser.fftSize = 64; 
+            analyser.fftSize = 128; 
             const bufferLength = analyser.frequencyBinCount;
             dataArray = new Uint8Array(bufferLength);
             
-            canvas = document.getElementById('visualizer');
-            ctx = canvas.getContext('2d');
-            
-            // Retina fix
+            // Resize canvas
             const dpr = window.devicePixelRatio || 1;
             const rect = canvas.getBoundingClientRect();
             canvas.width = rect.width * dpr;
@@ -44,88 +50,95 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.scale(dpr, dpr);
             
             isInitialized = true;
-            renderFrame();
-        } catch (e) {
-            console.error("Audio init failed:", e);
-        }
+            render();
+        } catch(e) { console.warn(e); }
     }
 
-    function renderFrame() {
-        requestAnimationFrame(renderFrame);
-        if (!analyser) return;
+    function render() {
+        requestAnimationFrame(render);
+        if(!analyser) return;
 
         analyser.getByteFrequencyData(dataArray);
-        
-        const width = canvas.getBoundingClientRect().width;
-        const height = canvas.getBoundingClientRect().height;
-        const bars = 16; // Количество столбиков
-        const barWidth = (width / bars) - 1;
-        
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, width, height);
+        const w = canvas.getBoundingClientRect().width;
+        const h = canvas.getBoundingClientRect().height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const radius = 110; // Радиус вокруг обложки
 
-        for (let i = 0; i < bars; i++) {
-            // Масштабируем значение (0-255) в высоту
-            const value = dataArray[i]; 
+        ctx.clearRect(0, 0, w, h);
+        
+        ctx.beginPath();
+        for (let i = 0; i < dataArray.length; i++) {
+            const value = dataArray[i];
             const percent = value / 255;
-            const barHeight = Math.floor(percent * height);
+            const angle = (i / dataArray.length) * Math.PI * 2 - Math.PI / 2;
             
-            const x = i * (barWidth + 1);
+            const barHeight = 10 + (percent * 50);
             
-            // Рисуем "блоками" по 2px
-            for (let y = 0; y < barHeight; y += 3) {
-                // Winamp Colors
-                let color = '#00e600'; // Green
-                const relativeY = y / height;
-                
-                if (relativeY > 0.8) color = '#e60000'; // Red top
-                else if (relativeY > 0.6) color = '#dcdc00'; // Yellow mid
+            const x1 = cx + Math.cos(angle) * radius;
+            const y1 = cy + Math.sin(angle) * radius;
+            const x2 = cx + Math.cos(angle) * (radius + barHeight);
+            const y2 = cy + Math.sin(angle) * (radius + barHeight);
 
-                ctx.fillStyle = color;
-                ctx.fillRect(x, height - y - 2, barWidth, 2);
-            }
-            
-            // "Пик" (падающая точка) - упрощенно просто верхний блок
-            if (barHeight > 0) {
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(x, height - barHeight - 2, barWidth, 2);
-            }
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
         }
+        
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#00ff88';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00ff88';
+        ctx.stroke();
     }
 
     // === CONTROLS ===
-    const btn = (id, fn) => {
-        document.getElementById(id).onclick = () => {
-            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-            fn();
-        };
+    function togglePlay() {
+        initAudio();
+        if (audio.paused) {
+            audio.play();
+            playIcon.textContent = 'pause';
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        } else {
+            audio.pause();
+            playIcon.textContent = 'play_arrow';
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+    }
+
+    playBtn.onclick = togglePlay;
+    
+    nextBtn.onclick = () => {
+        sendCommand('skip');
+        titleEl.textContent = "Loading next...";
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
     };
 
-    btn('btn-play', () => { initAudio(); audio.play(); });
-    btn('btn-pause', () => audio.pause());
-    btn('btn-stop', () => { 
-        sendCommand('stop'); 
-        audio.pause(); 
-        audio.currentTime = 0; 
-        timeDisplay.innerText = "00:00";
-    });
-    btn('btn-next', () => { 
-        sendCommand('skip'); 
-        trackTitle.innerText = "*** BUFFERING ***"; 
-    });
-    btn('btn-prev', () => audio.currentTime = 0);
-
-    document.getElementById('volume-slider').oninput = (e) => {
-        audio.volume = e.target.value / 100;
+    prevBtn.onclick = () => {
+        audio.currentTime = 0;
+        if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     };
 
+    // Playlist Drawer
+    window.togglePlaylist = () => drawer.classList.toggle('open');
+    playlistBtn.onclick = window.togglePlaylist;
+
+    // Time Update
     audio.ontimeupdate = () => {
-        const m = Math.floor(audio.currentTime / 60);
-        const s = Math.floor(audio.currentTime % 60);
-        timeDisplay.innerText = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+        const p = (audio.currentTime / audio.duration) * 100;
+        progressFill.style.width = `${p}%`;
+        
+        currTimeEl.textContent = formatTime(audio.currentTime);
+        durTimeEl.textContent = formatTime(audio.duration || 0);
     };
 
     audio.onended = () => sendCommand('skip');
+
+    function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m}:${sec < 10 ? '0'+sec : sec}`;
+    }
 
     // === SYNC ===
     async function sendCommand(action) {
@@ -142,38 +155,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function sync() {
-        if (!chatId) return;
+        if(!chatId) return;
         try {
             const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
             const data = await res.json();
-            const session = data.sessions[chatId];
+            const s = data.sessions[chatId];
 
-            if (session && session.current) {
-                const fullTitle = `${session.current.artist} - ${session.current.title}`;
-                const displayTitle = `*** ${fullTitle} *** (${session.current.duration}s)`;
-                
-                if (trackTitle.innerText !== displayTitle && !trackTitle.innerText.includes("BUFFERING")) {
-                    trackTitle.innerText = displayTitle;
+            if (s && s.current) {
+                if (titleEl.textContent !== s.current.title && !titleEl.textContent.includes("Loading")) {
+                    titleEl.textContent = s.current.title;
+                    artistEl.textContent = s.current.artist;
                 }
 
-                // Playlist Render
-                let pl = `<div class="pl-item current">1. ${fullTitle}</div>`;
-                pl += `<div class="pl-item">2. [Buffering next track...]</div>`;
-                pl += `<div class="pl-item">   ${session.query} Radio</div>`;
-                
-                if (playlistDiv.innerHTML !== pl) playlistDiv.innerHTML = pl;
-
-                // Audio Load
-                if (session.current.audio_url && currentTrackId !== session.current.identifier) {
-                    currentTrackId = session.current.identifier;
+                if (s.current.audio_url && currentId !== s.current.identifier) {
+                    currentId = s.current.identifier;
                     audio.crossOrigin = "anonymous";
-                    audio.src = session.current.audio_url;
-                    if (isInitialized) audio.play().catch(()=>{});
+                    audio.src = s.current.audio_url;
+                    if(isInitialized) audio.play().catch(()=>{});
+                    
+                    // Reset UI
+                    playIcon.textContent = 'pause';
                 }
-            } else {
-                trackTitle.innerText = "WINAMP STOPPED";
             }
-        } catch (e) {}
+        } catch(e) {}
     }
 
     setInterval(sync, 2000);

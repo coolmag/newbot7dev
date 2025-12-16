@@ -3,66 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Winamp</title>
+    <title>Music Player</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Иконки (Material Symbols) -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,400,1,0" rel="stylesheet" />
 </head>
 <body>
 
-    <div class="winamp">
-        <!-- HEADER -->
-        <div class="title-bar">
-            <span class="title-text">WINAMP 2.91</span>
-            <div class="controls-mini">
-                <div class="mini-btn"></div>
-                <div class="mini-btn"></div>
+    <div class="background-glow"></div>
+
+    <div class="player-container">
+        
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; height: 40px;">
+            <span class="material-symbols-rounded" style="color: #666; cursor: pointer;" onclick="window.close()">expand_more</span>
+            <span style="font-size: 12px; letter-spacing: 1px; color: #666;">NOW PLAYING</span>
+            <span class="material-symbols-rounded" style="color: #fff; cursor: pointer;" id="btn-playlist">queue_music</span>
+        </div>
+
+        <!-- Visualizer & Cover -->
+        <div class="visualizer-wrapper">
+            <canvas id="visualizer"></canvas>
+            <div class="album-art" id="album-cover"></div>
+        </div>
+
+        <!-- Info & Controls -->
+        <div>
+            <div class="track-info">
+                <div class="track-title" id="track-title">Loading...</div>
+                <div class="track-artist" id="track-artist">Waiting for signal</div>
+            </div>
+
+            <div class="progress-area">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="time-row">
+                    <span id="curr-time">0:00</span>
+                    <span id="dur-time">0:00</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn" id="btn-prev">
+                    <span class="material-symbols-rounded">skip_previous</span>
+                </button>
+                
+                <button class="btn btn-main" id="btn-play-pause">
+                    <span class="material-symbols-rounded" id="icon-play">play_arrow</span>
+                </button>
+                
+                <button class="btn" id="btn-next">
+                    <span class="material-symbols-rounded">skip_next</span>
+                </button>
             </div>
         </div>
+    </div>
 
-        <!-- MAIN DISPLAY -->
-        <div class="main-display">
-            <div class="timer">
-                <div class="timer-text" id="time-display">00:00</div>
-            </div>
-            
-            <div class="visualizer-container">
-                <!-- Spectrum -->
-                <div class="spectrum-box">
-                    <canvas id="visualizer"></canvas>
-                </div>
-                <!-- Title -->
-                <div class="track-info">
-                    <div class="marquee" id="track-title">WINAMP DEMO - IT REALLY WHIPS THE LLAMA'S ASS</div>
-                </div>
-                <!-- Info -->
-                <div class="kbps-stereo">
-                    <span>128 kbps</span>
-                    <span>44 kHz</span>
-                    <span style="color:#dcdc00">STEREO</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- SLIDER -->
-        <div class="slider-section">
-            <input type="range" id="volume-slider" min="0" max="100" value="80">
-        </div>
-
-        <!-- BUTTONS -->
-        <div class="buttons">
-            <div class="btn" id="btn-prev">⏮</div>
-            <div class="btn btn-big" id="btn-play">▶</div>
-            <div class="btn btn-big" id="btn-pause">⏸</div>
-            <div class="btn btn-big" id="btn-stop">⏹</div>
-            <div class="btn" id="btn-next">⏭</div>
-            <div class="btn" id="btn-eject">⏏</div>
-        </div>
-
-        <!-- PLAYLIST -->
-        <div class="playlist" id="playlist">
-            <div class="pl-item current">1. Loading track...</div>
-            <div class="pl-item">2. [Empty]</div>
-            <div class="pl-item">3. [Empty]</div>
+    <!-- Playlist Drawer -->
+    <div class="playlist-drawer" id="playlist-drawer">
+        <div class="drawer-handle" onclick="togglePlaylist()"></div>
+        <div id="playlist-content">
+            <div class="pl-item active">Current Track</div>
+            <div class="pl-item">Next Track in Queue...</div>
         </div>
     </div>
 
