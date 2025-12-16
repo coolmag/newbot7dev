@@ -78,7 +78,8 @@ class YouTubeDownloader:
         def filter_entry(e: Dict[str, Any], strict_mode: bool = True) -> bool:
             title = e.get('title', '').lower()
             uploader = e.get('uploader', '').lower()
-            duration = int(e.get('duration', 0))
+            raw_duration = e.get('duration')
+            duration = int(raw_duration or 0)
 
             # Базовые проверки длительности
             if not (120 <= duration <= 900): # От 2 до 15 минут
