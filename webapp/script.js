@@ -24,7 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
 
-    // --- Audio Visualizer ---
     function initAudioVisualizer() {
         if (isVisualizerInitialized || !audio) return;
         try {
@@ -68,15 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.stroke();
     }
 
-    // --- Controls & State ---
     function togglePlay() {
-        initAudioVisualizer(); // Redundant call on click ensures it starts
+        initAudioVisualizer();
         if (audio.src && !audio.src.includes('undefined')) {
             audio.paused ? audio.play().catch(e => console.warn("Play() failed:", e)) : audio.pause();
         }
     }
     
-    // --- Audio Element Event Handlers ---
     audio.onplay = () => { playIcon.textContent = 'pause'; initAudioVisualizer(); };
     audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
     audio.onended = () => sendCommand('skip');
@@ -90,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePositionState();
     };
 
-    // --- Player Event Listeners ---
     playBtn.addEventListener('click', () => { togglePlay(); tg.HapticFeedback?.impactOccurred('light'); });
     nextBtn.addEventListener('click', () => { sendCommand('skip'); tg.HapticFeedback?.impactOccurred('medium'); });
     prevBtn.addEventListener('click', () => { audio.currentTime = 0; tg.HapticFeedback?.impactOccurred('light'); });
@@ -103,7 +99,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Media Session API for Background Playback ---
     function setupMediaSession(metadata) {
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -126,7 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Utils & API ---
     function formatTime(s) {
         if (isNaN(s)) return "0:00";
         const m = Math.floor(s / 60); const sec = Math.floor(s % 60);
