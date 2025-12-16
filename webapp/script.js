@@ -102,7 +102,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // UI updates driven by the audio element
-    audio.onplay = () => { playIcon.textContent = 'pause'; };
+    audio.onplay = () => {
+        playIcon.textContent = 'pause';
+        initAudioVisualizer(); // Initialize visualizer on play
+    };
     audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
     audio.onended = () => { sendCommand('skip'); };
 
