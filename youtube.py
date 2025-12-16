@@ -171,7 +171,7 @@ class YouTubeDownloader:
             if not final_path:
                 return DownloadResult(success=False, error="Файл не найден после скачивания.")
 
-            result = DownloadResult(True, final_path, TrackInfo.from_dict(info))
+            result = DownloadResult(True, final_path, TrackInfo.from_yt_info(info))
             await self._cache.set(cache_key, Source.YOUTUBE, result)
             return result
 
