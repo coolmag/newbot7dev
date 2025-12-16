@@ -107,18 +107,22 @@ class YouTubeDownloader:
                 '10 hours', '8 hours', '1 hour', 'mix', 'remix compilation', 
                 'full album', 'playlist', 'compilation', 'live radio', 
                 '24/7', 'stream', 'non-stop', 'top 10', 'top 20', 'top 50', 
-                'top 100', 'hits', 'chart', 'best of', 'mashup'
+                'top 100', 'hits', 'chart', 'best of', 'mashup', 'billboard', 'hot 100'
             ]
 
             for e in entries:
                 if not e: continue
                 vid_id = e.get("id")
-                title = e.get("title", "").lower()
+                title = e.get("title", "")
                 
                 if not vid_id: continue
 
-                # Фильтр по названию - теперь строгий
-                if any(b in title for b in BANNED):
+                # --- Строгие фильтры ---
+                # 1. По черному списку
+                if any(b in title.lower() for b in BANNED):
+                    continue
+                # 2. Эвристика на перечисление артистов в названии
+                if title.count(',') > 3:
                     continue
 
                 duration = e.get("duration")
@@ -130,13 +134,12 @@ class YouTubeDownloader:
                     if duration < 120: continue # < 2 мин
                 
                 # Если длительность 0 или None - пропускаем (обычно это стримы)
-                # НО: иногда это норм треки. Давай рисковать только если это не "Radio"
-                elif "radio" in title or "live" in title:
+                elif "radio" in title.lower() or "live" in title.lower():
                     continue
 
                 out.append(
                     TrackInfo(
-                        title=e.get("title", "Unknown"),
+                        title=title, # Сохраняем оригинальное название
                         artist=e.get("uploader") or "Unknown",
                         duration=duration or 0,
                         source=Source.YOUTUBE.value,

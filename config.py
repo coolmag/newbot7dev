@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # ==========================================
     
     MUSIC_CATALOG: Dict[str, Any] = {
-        "🎧 Электроника": {
+        "📂 Электроника": {
             "House": {
                 "Deep House": "deep house classics",
                 "Tech House": "tech house top 100",
@@ -83,7 +83,7 @@ class Settings(BaseSettings):
                 "Italo Disco": "italo disco 80s",
             },
         },
-        "🎸 Рок / Альтернатива": {
+        "📂 Рок / Альтернатива": {
             "Classic Rock": {
                 "Psychedelic Rock 60-70s": "psychedelic rock 60s 70s Jimi Hendrix",
                 "Progressive Rock 70s": "progressive rock 70s Pink Floyd Yes",
@@ -105,7 +105,7 @@ class Settings(BaseSettings):
                 "Post-Punk": "post-punk joy division the cure",
             },
         },
-        "🎤 Хип-хоп / R&B": {
+        "📂 Хип-хоп / R&B": {
             "Roots": {
                 "Funk": "funk 70s james brown parliament",
                 "Soul": "soul music 60s 70s marvin gaye aretha franklin",
@@ -126,7 +126,7 @@ class Settings(BaseSettings):
                 "Phonk": "phonk drift music",
             },
         },
-        "✨ Поп": {
+        "📂 Поп": {
             "80s Pop": {
                 "Synth-Pop": "synth-pop 80s depeche mode human league",
                 "New Wave": "new wave 80s the police tears for fears",
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
                 "Latin Pop": "latin pop hits shakira ricky martin",
             },
         },
-        "🎷 Джаз / Блюз": {
+        "📂 Джаз / Блюз": {
             "Jazz": {
                 "Cool Jazz": "cool jazz miles davis chet baker",
                 "Jazz Fusion": "jazz fusion weather report mahavishnu orchestra",
