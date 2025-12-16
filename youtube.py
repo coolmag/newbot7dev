@@ -57,6 +57,7 @@ class YouTubeDownloader:
                 # Лимит 30 МБ (хватит на любой трек, но не на микс)
                 "max_filesize": 30 * 1024 * 1024,
                 "match_filter": yt_dlp.utils.match_filter_func("!is_live"),
+                "writeinfojson": True,
             })
         
         return opts
@@ -210,20 +211,28 @@ class YouTubeDownloader:
             if not final_path:
                 return DownloadResult(success=False, error="Файл не скачался (возможно, стрим).")
 
-            # 4. Метаданные (быстрый запрос)
+            # 4. Чтение метаданных из .json файла
             track_info = None
-            try:
-                info = await self._extract_info(video_id, self._get_opts(mode="search"))
-                if info and info.get('entries'):
-                    e = info['entries'][0]
+            json_path = self._settings.DOWNLOADS_DIR / f"{video_id}.info.json"
+            if json_path.exists():
+                try:
+                    import json
+                    info = json.loads(json_path.read_text(encoding="utf-8"))
                     track_info = TrackInfo(
-                        title=e.get("title", "Unknown"),
-                        artist=e.get("uploader", "Unknown"),
-                        duration=int(e.get("duration") or 0),
+                        title=info.get("title", "Unknown"),
+                        artist=info.get("uploader", "Unknown"),
+                        duration=int(info.get("duration") or 0),
                         source=Source.YOUTUBE.value,
                         identifier=video_id,
                     )
-            except: pass
+                    # Чистим json после использования
+                    try:
+                        json_path.unlink()
+                    except OSError as e:
+                        logger.warning(f"Could not remove info.json file: {e}")
+
+                except Exception as e:
+                    logger.warning(f"Could not read metadata JSON for {video_id}: {e}")
 
             if not track_info:
                 track_info = TrackInfo("Unknown", "Unknown", 0, Source.YOUTUBE.value, video_id)

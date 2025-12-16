@@ -67,10 +67,11 @@ async def lifespan(app: FastAPI):
             ("stop", "⏹️ Стоп"),
             ("skip", "⏭️ Скип"),
         ])
-    except: pass
+    except Exception as e: 
+        logger.warning(f"Could not set bot commands: {e}")
 
-    await tg_app.bot.set_webhook(url=settings.WEBHOOK_URL)
-    logger.info(f"✅ Bot started on {settings.WEBHOOK_URL}")
+    await tg_app.bot.set_webhook(url=webhook_url_with_path)
+    logger.info(f"✅ Bot started on {webhook_url_with_path}")
 
     # State
     app.state.tg_app = tg_app
@@ -78,8 +79,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    try: await radio.stop_all()
-    except: pass
+    try: 
+        await radio.stop_all()
+    except Exception as e: 
+        logger.warning(f"Error during radio stop: {e}")
     
     await tg_app.stop()
     await tg_app.shutdown()

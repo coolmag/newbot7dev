@@ -264,7 +264,11 @@ class RadioManager:
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
             )
-        except: pass
+        except BadRequest:
+            logger.warning(f"Dashboard message not found in chat {s.chat_id}. Disabling updates.")
+            s.dashboard_msg_id = None
+        except Exception as e:
+            logger.error(f"Failed to update dashboard for {s.chat_id}: {e}")
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
         if status_override: status = status_override

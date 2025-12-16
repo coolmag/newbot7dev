@@ -1,11 +1,12 @@
 from pathlib import Path
 from typing import List, Dict, Any
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseSettings
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"
 
     # --- Основные настройки ---
     BOT_TOKEN: str
