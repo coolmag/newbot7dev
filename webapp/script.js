@@ -10,60 +10,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const prevBtn = document.getElementById('btn-prev');
     const titleEl = document.getElementById('track-title');
     const artistEl = document.getElementById('track-artist');
-    const progressBar = document.querySelector('.progress-bar'); // Get the container
+    const progressBar = document.querySelector('.progress-bar');
     const progressFill = document.getElementById('progress-fill');
     const currTimeEl = document.getElementById('curr-time');
     const durTimeEl = document.getElementById('dur-time');
-    const playlistBtn = document.getElementById('btn-playlist');
-    const drawer = document.getElementById('playlist-drawer');
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
 
     // State
-    let audioCtx, analyser, dataArray;
-    let isInitialized = false;
-    let currentTrackId = null;
-    let isCommandProcessing = false;
+    let audioCtx, analyser, dataArray, isVisualizerInitialized = false;
+    let currentTrackId = null, isCommandProcessing = false, isSeeking = false;
 
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
 
     // --- Audio Visualizer ---
     function initAudioVisualizer() {
-        if (isInitialized) return;
+        if (isVisualizerInitialized) return;
         try {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
             const source = audioCtx.createMediaElementSource(audio);
             source.connect(analyser);
             analyser.connect(audioCtx.destination);
-            
-            analyser.fftSize = 128; 
-            const bufferLength = analyser.frequencyBinCount;
-            dataArray = new Uint8Array(bufferLength);
-            
+            analyser.fftSize = 128;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
             const dpr = window.devicePixelRatio || 1;
             const rect = canvas.getBoundingClientRect();
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
             ctx.scale(dpr, dpr);
-            
-            isInitialized = true;
+            isVisualizerInitialized = true;
             renderVisualizer();
         } catch(e) { console.warn("Audio Visualizer failed to initialize:", e); }
     }
 
     function renderVisualizer() {
         requestAnimationFrame(renderVisualizer);
-        if (!analyser) return;
-
+        if (!analyser || isSeeking) return; // Pause visualizer while seeking
         analyser.getByteFrequencyData(dataArray);
         const w = canvas.getBoundingClientRect().width;
         const h = canvas.getBoundingClientRect().height;
         const cx = w / 2;
         const cy = h / 2;
         const radius = 110;
-
         ctx.clearRect(0, 0, w, h);
         ctx.beginPath();
         for (let i = 0; i < dataArray.length; i++) {
@@ -71,16 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = value / 255;
             const angle = (i / dataArray.length) * Math.PI * 2 - Math.PI / 2;
             const barHeight = 10 + (percent * 50);
-            
             const x1 = cx + Math.cos(angle) * radius;
             const y1 = cy + Math.sin(angle) * radius;
             const x2 = cx + Math.cos(angle) * (radius + barHeight);
             const y2 = cy + Math.sin(angle) * (radius + barHeight);
-
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
         }
-        
         ctx.lineCap = 'round';
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#00ff88';
@@ -89,28 +76,20 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.stroke();
     }
 
-    // --- Controls & State Management ---
+    // --- Controls & State ---
     function togglePlay() {
         initAudioVisualizer();
         if (audio.src && !audio.src.includes('undefined')) {
-            if (audio.paused) {
-                audio.play().catch(e => console.warn("Play() failed:", e));
-            } else {
-                audio.pause();
-            }
+            audio.paused ? audio.play().catch(e => console.warn("Play() failed:", e)) : audio.pause();
         }
     }
     
-    // UI updates driven by the audio element
-    audio.onplay = () => {
-        playIcon.textContent = 'pause';
-        initAudioVisualizer(); // Initialize visualizer on play
-    };
+    audio.onplay = () => { playIcon.textContent = 'pause'; initAudioVisualizer(); };
     audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
-    audio.onended = () => { sendCommand('skip'); };
+    audio.onended = () => sendCommand('skip');
 
     audio.ontimeupdate = () => {
-        if (audio.duration) {
+        if (audio.duration && !isSeeking) {
             const p = (audio.currentTime / audio.duration) * 100;
             progressFill.style.width = `${p}%`;
             currTimeEl.textContent = formatTime(audio.currentTime);
@@ -118,35 +97,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Event Listeners ---
-    playBtn.addEventListener('click', () => {
-        togglePlay();
-        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
-    });
-    
-    nextBtn.addEventListener('click', () => {
-        sendCommand('skip');
-        titleEl.textContent = "Loading next...";
-        artistEl.textContent = "Please wait...";
-        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('medium');
+    // --- Robust Seek Bar (Scrubbing) ---
+    function seek(e) {
+        if (!audio.duration) return;
+        const rect = progressBar.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const width = rect.width;
+        const percentage = Math.max(0, Math.min(1, offsetX / width));
+        audio.currentTime = percentage * audio.duration;
+        // Immediately update UI for responsiveness
+        progressFill.style.width = `${percentage * 100}%`;
+    }
+
+    progressBar.addEventListener('mousedown', (e) => {
+        isSeeking = true;
+        seek(e);
     });
 
-    prevBtn.addEventListener('click', () => {
-        audio.currentTime = 0;
-        if(tg.HapticFeedback && tg.HapticFeedback.impactOccurred) tg.HapticFeedback.impactOccurred('light');
-    });
-
-    // ** NEW: Seek on progress bar click **
-    progressBar.addEventListener('click', (e) => {
-        if (audio.duration) {
-            const barWidth = progressBar.clientWidth;
-            const clickX = e.offsetX;
-            const seekTime = (clickX / barWidth) * audio.duration;
-            audio.currentTime = seekTime;
+    document.addEventListener('mousemove', (e) => {
+        if (isSeeking) {
+            seek(e);
         }
     });
 
-    // --- Utils ---
+    document.addEventListener('mouseup', () => {
+        if (isSeeking) {
+            isSeeking = false;
+        }
+    });
+    
+    // --- Other Listeners ---
+    playBtn.addEventListener('click', () => { togglePlay(); if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
+    nextBtn.addEventListener('click', () => { sendCommand('skip'); titleEl.textContent = "Loading next..."; artistEl.textContent = "Please wait..."; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('medium'); });
+    prevBtn.addEventListener('click', () => { audio.currentTime = 0; if(tg.HapticFeedback?.impactOccurred) tg.HapticFeedback.impactOccurred('light'); });
+
+    // --- Utils & API ---
     function formatTime(s) {
         if (isNaN(s)) return "0:00";
         const m = Math.floor(s / 60);
@@ -154,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${m}:${sec < 10 ? '0'+sec : sec}`;
     }
 
-    // --- API Communication ---
     async function sendCommand(action) {
         if (!chatId || isCommandProcessing) return;
         isCommandProcessing = true;
@@ -164,9 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({chat_id: chatId})
             });
-        } catch(e) {
-            console.error(`Failed to send command '${action}':`, e);
-        }
+        } catch(e) { console.error(`Failed to send command '${action}':`, e); }
         setTimeout(() => isCommandProcessing = false, 1000);
     }
 
@@ -174,25 +156,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chatId) return;
         try {
             const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
-            if (!res.ok) return; 
-
+            if (!res.ok) return;
             const data = await res.json();
             const session = data.sessions[chatId];
-
-            if (session && session.current) {
+            if (session?.current) {
                 if (titleEl.textContent !== session.current.title) {
                     titleEl.textContent = session.current.title;
                     artistEl.textContent = session.current.artist;
                 }
-
                 if (session.current.identifier && currentTrackId !== session.current.identifier) {
                     currentTrackId = session.current.identifier;
                     audio.src = session.current.audio_url;
                     audio.load();
-                    
-                    audio.play().catch(e => {
-                        console.warn("Autoplay was prevented by the browser.");
-                    });
+                    audio.play().catch(e => console.warn("Autoplay was prevented."));
                 }
             } else {
                 titleEl.textContent = "Radio Stopped";
@@ -201,12 +177,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTrackId = null;
                 audio.removeAttribute('src');
             }
-        } catch(e) {
-            console.error("Sync failed:", e);
-        }
+        } catch(e) { console.error("Sync failed:", e); }
     }
 
-    // Initial state setup
     playIcon.textContent = 'play_arrow';
     setInterval(syncWithBackend, 2000);
     syncWithBackend();
