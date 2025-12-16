@@ -32,6 +32,8 @@ class RadioSession:
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     skip_event: asyncio.Event = field(default_factory=asyncio.Event)
     preload_task: Optional[asyncio.Task] = None
+    next_file_path: Optional[str] = None
+    next_track_info: Optional[TrackInfo] = None
     fails_in_row: int = 0
     dashboard_msg_id: Optional[int] = None
 
