@@ -52,44 +52,109 @@ class Settings(BaseSettings):
     # ==========================================
     
     MUSIC_CATALOG: Dict[str, Any] = {
-        "🎸 Рок": {
-            "Классик-рок 70-х": "classic rock 70s fleetwood mac led zeppelin",
-            "Хард-рок 80-х": "hard rock 80s bon jovi ac/dc guns n roses",
-            "Альтернатива 90-х": "90s alternative rock nirvana pearl jam soundgarden",
-            "Поп-панк 00-х": "pop punk 2000s blink-182 good charlotte green day",
-            "Прогрессив-метал": "progressive metal tool dream theater opeth",
-            "Современный рок": "modern rock hits foo fighters royal blood",
+        "🎧 Электроника": {
+            "House": {
+                "Deep House": "deep house classics",
+                "Tech House": "tech house top 100",
+                "Progressive House": "progressive house anthems",
+            },
+            "Techno": {
+                "Melodic Techno": "melodic techno playlist tale of us",
+                "Industrial Techno": "industrial techno mix",
+                "Minimal Techno": "minimal techno boris brejcha",
+            },
+            "Trance": {
+                "Vocal Trance": "vocal trance hits armin van buuren",
+                "Psytrance": "psytrance festival mix astrix vini vici",
+                "Uplifting Trance": "uplifting trance emotional",
+            },
+            "Breaks / DnB": {
+                "Drum & Bass": "liquid dnb classics",
+                "Dubstep": "classic dubstep skrillex burial",
+                "Breakbeat": "90s breakbeat prodigy chemical brothers",
+            },
+            "Ambient / Chill": {
+                "Ambient": "ambient music brian eno",
+                "Chillwave": "chillwave playlist washed out",
+                "Downtempo": "downtempo chill trip-hop massive attack",
+            },
+            "80s Influence": {
+                "Synthwave": "synthwave retrowave playlist The Midnight",
+                "Italo Disco": "italo disco 80s",
+            },
+        },
+        "🎸 Рок / Альтернатива": {
+            "Classic Rock": {
+                "Psychedelic Rock 60-70s": "psychedelic rock 60s 70s Jimi Hendrix",
+                "Progressive Rock 70s": "progressive rock 70s Pink Floyd Yes",
+                "Arena Rock 80s": "arena rock 80s bon jovi journey",
+            },
+            "Hard Rock & Metal": {
+                "Hard Rock": "hard rock 70s 80s led zeppelin ac/dc",
+                "Heavy Metal": "heavy metal iron maiden judas priest",
+                "Thrash Metal": "thrash metal metallica slayer",
+            },
+            "Alternative": {
+                "Grunge 90s": "grunge rock 90s nirvana soundgarden",
+                "Britpop 90s": "britpop 90s oasis blur pulp",
+                "Indie Rock 00-10s": "indie rock 2000s the strokes arctic monkeys",
+            },
+            "Punk": {
+                "Punk Rock 70s": "punk rock 70s ramones sex pistols",
+                "Pop-Punk 90-00s": "pop punk 2000s blink-182 sum 41",
+                "Post-Punk": "post-punk joy division the cure",
+            },
         },
         "🎤 Хип-хоп / R&B": {
-            "Олдскул хип-хоп 80-х": "80s old school hip hop run dmc public enemy",
-            "Золотая эра хип-хопа 90-х": "90s golden age hip hop a tribe called quest nas",
-            "R&B 90-х": "90s r&b mariah carey tlc boyz ii men",
-            "Трэп": "modern trap music Travis Scott Migos Future",
-            "Дрилл": "drill music pop smoke chief keef",
-            "Фонк": "phonk music cowbell drift",
-            "Соул / Фанк 70-х": "70s soul funk Marvin Gaye Stevie Wonder",
+            "Roots": {
+                "Funk": "funk 70s james brown parliament",
+                "Soul": "soul music 60s 70s marvin gaye aretha franklin",
+                "Disco": "disco classics 70s earth wind and fire",
+            },
+            "Golden Age": {
+                "Old-School 80s": "80s old school hip hop run dmc",
+                "East Coast 90s": "90s east coast hip hop nas wu-tang clan",
+                "West Coast 90s": "90s west coast hip hop dr dre snoop dogg",
+            },
+            "R&B": {
+                "Contemporary R&B 90-00s": "90s 2000s r&b hits usher beyonce",
+                "Neo-Soul": "neo-soul d'angelo erykah badu",
+            },
+            "Modern": {
+                "Trap": "trap music top hits Travis Scott Migos",
+                "Drill": "drill music pop smoke chief keef",
+                "Phonk": "phonk drift music",
+            },
         },
-        "✨ Поп-музыка": {
-            "Диско 70-х": "disco hits 70s Bee Gees Donna Summer ABBA",
-            "Синти-поп 80-х": "synth-pop 80s depeche mode human league a-ha",
-            "Поп 90-х": "90s pop hits spice girls backstreet boys britney spears",
-            "Поп 00-х": "2000s pop hits beyonce justin timberlake christina aguilera",
-            "Современный поп": "modern pop hits ed sheeran taylor swift billie eilish",
-            "K-Pop": "k-pop hits bts blackpink twice",
+        "✨ Поп": {
+            "80s Pop": {
+                "Synth-Pop": "synth-pop 80s depeche mode human league",
+                "New Wave": "new wave 80s the police tears for fears",
+            },
+            "90s Pop": {
+                "Teen Pop": "90s teen pop britney spears backstreet boys",
+                "Europop": "90s europop ace of base aqua",
+            },
+            "00s Pop": {
+                "Pop/R&B": "2000s pop r&b beyonce justin timberlake",
+                "Dance-Pop": "2000s dance pop lady gaga rihanna",
+            },
+            "Global Pop": {
+                "K-Pop": "k-pop hits bts blackpink",
+                "Latin Pop": "latin pop hits shakira ricky martin",
+            },
         },
-        "💿 По десятилетиям": {
-            "Хиты 70-х": "best songs 1970s",
-            "Хиты 80-х": "best songs 1980s",
-            "Хиты 90-х": "best songs 1990s",
-            "Хиты 00-х": "best songs 2000s",
-            "Хиты 10-х": "best songs 2010s",
-        },
-        "🎧 Для настроения": {
-            "Джаз-кафе": "jazz cafe background music",
-            "Лоу-фай": "lofi hip hop radio beats to relax",
-            "Акустика": "acoustic covers popular songs",
-            "Эмбиент": "ambient music for studying",
-            "Регги": "reggae classics bob marley",
+        "🎷 Джаз / Блюз": {
+            "Jazz": {
+                "Cool Jazz": "cool jazz miles davis chet baker",
+                "Jazz Fusion": "jazz fusion weather report mahavishnu orchestra",
+                "Big Band / Swing": "big band swing duke ellington",
+            },
+            "Blues": {
+                "Delta Blues": "delta blues robert johnson",
+                "Chicago Blues": "chicago blues muddy waters howlin wolf",
+                "Electric Blues": "electric blues b b king",
+            },
         },
     }
 
