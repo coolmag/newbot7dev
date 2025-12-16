@@ -212,11 +212,12 @@ class RadioManager:
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    limit = 90.0
+                    interval_s = 90.0 # Минимальный интервал между треками
                     duration = float(track_info.duration)
-                    # Ждем либо полную длительность, либо 90 сек, в зависимости от того, что короче
-                    wait_time = min(duration, limit) if duration > 0 else limit
                     
+                    # Ждем либо 90 секунд, либо полную длительность трека, если она больше 90 секунд
+                    wait_time = max(duration, interval_s) if duration > 0 else interval_s 
+
                     try:
                         await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                     except asyncio.TimeoutError:

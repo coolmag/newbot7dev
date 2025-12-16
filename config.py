@@ -52,54 +52,45 @@ class Settings(BaseSettings):
     # ==========================================
     
     MUSIC_CATALOG: Dict[str, Any] = {
-        "🎸 Рок и Метал": {
-            "🤘 Classic Rock": "classic rock hits 70s 80s songs",
-            "🎸 Alt Rock": "alternative rock hits songs",
-            "⚫ Metal": {
-                "🤘 Heavy Metal": "heavy metal hits",
-                "🔥 Thrash Metal": "thrash metal songs",
-                "☠️ Death Metal": "death metal songs",
-                "🛠 Industrial": "industrial metal songs rammstein"
-            },
-            "😡 Punk": {
-                "🇬🇧 Classic Punk": "sex pistols songs",
-                "🛹 Pop Punk": "pop punk hits blink-182 songs",
-                "🇷🇺 Русский Панк": "король и шут песни"
-            }
+        "🎸 Рок": {
+            "Классик-рок 70-х": "classic rock 70s fleetwood mac led zeppelin",
+            "Хард-рок 80-х": "hard rock 80s bon jovi ac/dc guns n roses",
+            "Альтернатива 90-х": "90s alternative rock nirvana pearl jam soundgarden",
+            "Поп-панк 00-х": "pop punk 2000s blink-182 good charlotte green day",
+            "Прогрессив-метал": "progressive metal tool dream theater opeth",
+            "Современный рок": "modern rock hits foo fighters royal blood",
         },
-        "🎹 Электроника": {
-            "🏠 House": {
-                "☀️ Deep House": "deep house vocal songs",
-                "🎹 Tech House": "tech house tracks",
-                "🕺 Funky House": "funky house songs"
-            },
-            "🌀 Trance": {
-                "🎤 Vocal Trance": "vocal trance hits",
-                "🕉 Psy-Trance": "psytrance hits",
-                "⏫ Uplifting": "uplifting trance songs"
-            },
-            "💊 Techno": {
-                "🏭 Industrial": "hard industrial techno tracks",
-                "🎹 Melodic": "melodic techno songs"
-            },
-            "🔊 Drum & Bass": {
-                "🌴 Liquid": "liquid drum and bass songs",
-                "🧠 Neurofunk": "neurofunk dnb tracks",
-                "🏃 Jump Up": "jump up dnb songs"
-            },
-            "🌌 Synthwave": "synthwave songs"
+        "🎤 Хип-хоп / R&B": {
+            "Олдскул хип-хоп 80-х": "80s old school hip hop run dmc public enemy",
+            "Золотая эра хип-хопа 90-х": "90s golden age hip hop a tribe called quest nas",
+            "R&B 90-х": "90s r&b mariah carey tlc boyz ii men",
+            "Трэп": "modern trap music Travis Scott Migos Future",
+            "Дрилл": "drill music pop smoke chief keef",
+            "Фонк": "phonk music cowbell drift",
+            "Соул / Фанк 70-х": "70s soul funk Marvin Gaye Stevie Wonder",
         },
-        "🎤 Хип-Хоп": {
-            "🇺🇸 Old School": "90s hip hop songs",
-            "🔫 Trap": "trap music hits",
-            "🏎 Phonk": "drift phonk songs",
-            "🇷🇺 Наш Рэп": "русский рэп хиты"
+        "✨ Поп-музыка": {
+            "Диско 70-х": "disco hits 70s Bee Gees Donna Summer ABBA",
+            "Синти-поп 80-х": "synth-pop 80s depeche mode human league a-ha",
+            "Поп 90-х": "90s pop hits spice girls backstreet boys britney spears",
+            "Поп 00-х": "2000s pop hits beyonce justin timberlake christina aguilera",
+            "Современный поп": "modern pop hits ed sheeran taylor swift billie eilish",
+            "K-Pop": "k-pop hits bts blackpink twice",
         },
-        "✨ Чилл / Вайб": {
-            "☕️ Lo-Fi": "lofi hip hop songs",
-            "🛌 Ambient": "ambient music tracks",
-            "🎷 Jazz": "smooth jazz songs"
-        }
+        "💿 По десятилетиям": {
+            "Хиты 70-х": "best songs 1970s",
+            "Хиты 80-х": "best songs 1980s",
+            "Хиты 90-х": "best songs 1990s",
+            "Хиты 00-х": "best songs 2000s",
+            "Хиты 10-х": "best songs 2010s",
+        },
+        "🎧 Для настроения": {
+            "Джаз-кафе": "jazz cafe background music",
+            "Лоу-фай": "lofi hip hop radio beats to relax",
+            "Акустика": "acoustic covers popular songs",
+            "Эмбиент": "ambient music for studying",
+            "Регги": "reggae classics bob marley",
+        },
     }
 
 def get_settings() -> Settings:

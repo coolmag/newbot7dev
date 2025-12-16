@@ -86,8 +86,15 @@ class YouTubeDownloader:
         """
         Умный поиск.
         """
-        # Минус-слова для YouTube
-        clean_query = f'{query} -live -stream -"10 hours" -"full album"'
+        # Умный поиск.
+        """
+        # Минус-слова для YouTube, чтобы отсеять мусор на уровне запроса
+        negative_keywords = [
+            "-live", "-stream", "-lyrics",
+            '"-10 hours"', '"-full album"', "-compilation", "-playlist",
+            '"-top 50"', '"-top 100"', "-mix"
+        ]
+        clean_query = f'{query} {" ".join(negative_keywords)}'
         search_query = f"ytsearch{limit * 2}:{clean_query}"
         opts = self._get_opts(mode="search")
 
@@ -97,9 +104,12 @@ class YouTubeDownloader:
 
             out: List[TrackInfo] = []
             
+            # Черный список для дополнительной фильтрации по названию
             BANNED = [
-                '10 hours', '1 hour', 'mix 20', 'full album', 'playlist', 
-                'compilation', 'live radio', '24/7', 'stream', 'top 10', 'best of'
+                '10 hours', '8 hours', '1 hour', 'mix', 'remix compilation', 
+                'full album', 'playlist', 'compilation', 'live radio', 
+                '24/7', 'stream', 'non-stop', 'top 10', 'top 20', 'top 50', 
+                'top 100', 'hits', 'chart', 'best of', 'mashup'
             ]
 
             for e in entries:
@@ -109,9 +119,9 @@ class YouTubeDownloader:
                 
                 if not vid_id: continue
 
-                # Фильтр по названию
+                # Фильтр по названию - теперь строгий
                 if any(b in title for b in BANNED):
-                    if "mix" not in query.lower(): continue
+                    continue
 
                 duration = e.get("duration")
                 
