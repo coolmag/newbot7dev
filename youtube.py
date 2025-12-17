@@ -27,6 +27,11 @@ class YouTubeDownloader:
             "source_address": "0.0.0.0", "no_check_certificate": True, "geo_bypass": True,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         }
+        
+        # Add cookie support to prevent "Sign in to confirm you're not a bot" errors
+        if self._settings.COOKIES_FILE.exists() and self._settings.COOKIES_FILE.stat().st_size > 0:
+            opts['cookiefile'] = str(self._settings.COOKIES_FILE)
+
         if mode == "search":
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":

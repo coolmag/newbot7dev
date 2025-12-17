@@ -36,7 +36,7 @@ def audio_mime_for(path: Path) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    settings = Settings()
+    settings = get_settings()
 
     # 1. Меню
     # preload_paths(settings.MUSIC_CATALOG) # Removed as MUSIC_CATALOG is now dynamic
