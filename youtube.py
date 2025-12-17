@@ -36,7 +36,7 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio/best",
+                "format": "bestaudio[ext=m4a]/bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "128"}],
                 "writeinfojson": True,
@@ -110,16 +110,24 @@ class YouTubeDownloader:
                 return DownloadResult(success=False, error=f"Файл слишком большой ({filesize/(1024*1024):.1f}MB)")
 
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(self._get_opts("download")).download([video_url]))
+            download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(self._get_opts("download")).download([video_url]))
+            await asyncio.wait_for(download_task, timeout=float(self._settings.DOWNLOAD_TIMEOUT_S))
 
             final_path = self._find_downloaded_file(video_id)
             if not final_path or Path(final_path).stat().st_size > max_size_bytes:
-                if final_path: Path(final_path).unlink()
+                if final_path: Path(final_path).unlink(missing_ok=True)
                 return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
 
             result = DownloadResult(True, str(final_path), TrackInfo.from_yt_info(info))
             await self._cache.set(cache_key, Source.YOUTUBE, result)
             return result
+        except asyncio.TimeoutError:
+            logger.error(f"Скачивание видео {video_id} превысило таймаут {self._settings.DOWNLOAD_TIMEOUT_S}с.")
+            # Попытка очистить частичные файлы
+            for partial_file in glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.*")):
+                try: Path(partial_file).unlink(missing_ok=True)
+                except OSError: pass
+            return DownloadResult(success=False, error="Превышен таймаут скачивания")
         except Exception as e:
             logger.error(f"Критическая ошибка скачивания: {e}", exc_info=True)
             return DownloadResult(success=False, error=str(e))
