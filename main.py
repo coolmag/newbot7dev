@@ -3,22 +3,27 @@ import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from telegram import Update
 from telegram.ext import Application
 
+from auth import get_validated_user, WebAppUser
 from config import Settings
 from logging_setup import setup_logging
 from cache import CacheService
 from youtube import YouTubeDownloader
 from radio import RadioManager
 from handlers import setup_handlers
-from utils import preload_paths, PATH_STORE
 
 logger = logging.getLogger("main")
+
+class RadioStartRequest(BaseModel): # New Pydantic model
+    chat_id: int
+    query: str
 
 def audio_mime_for(path: Path) -> str:
     ext = path.suffix.lower()
@@ -34,8 +39,9 @@ async def lifespan(app: FastAPI):
     settings = Settings()
 
     # 1. Меню
-    preload_paths(settings.MUSIC_CATALOG)
-    
+    # preload_paths(settings.MUSIC_CATALOG) # Removed as MUSIC_CATALOG is now dynamic
+ # Note: MUSIC_CATALOG is removed from config.py
+
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     if settings.COOKIES_CONTENT:
         settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
@@ -117,17 +123,23 @@ async def radio_status(chat_id: str | None = None):
     return JSONResponse(full)
 
 @app.post("/api/radio/skip")
-async def skip(req: Request):
+async def skip(req: Request, user: WebAppUser = Depends(get_validated_user)):
     data = await req.json()
     if chat_id := data.get("chat_id"):
         await app.state.radio.skip(int(chat_id))
     return {"ok": True}
 
 @app.post("/api/radio/stop")
-async def stop(req: Request):
+async def stop(req: Request, user: WebAppUser = Depends(get_validated_user)):
     data = await req.json()
     if chat_id := data.get("chat_id"):
         await app.state.radio.stop(int(chat_id))
+    return {"ok": True}
+
+@app.post("/api/radio/start")
+async def start_radio_from_webapp(req: RadioStartRequest, user: WebAppUser = Depends(get_validated_user)):
+    radio = app.state.radio
+    await radio.start(chat_id=req.chat_id, query=req.query, chat_type="WebApp")
     return {"ok": True}
 
 @app.post("/telegram")

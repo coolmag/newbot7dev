@@ -44,6 +44,26 @@ class RadioManager:
         self._downloader = downloader
         self._sessions: Dict[int, RadioSession] = {}
 
+    def _get_random_style_query(self) -> str:
+        genres_data = self._settings.GENRE_DATA.get("genres", {})
+        if not genres_data:
+            return random.choice(["lofi beats", "pop hits", "rock music"]) # Fallback if GENRE_DATA is empty
+
+        main_genre_key = random.choice(list(genres_data.keys()))
+        main_genre = genres_data[main_genre_key]
+
+        subgenres_data = main_genre.get("subgenres", {})
+        if subgenres_data:
+            subgenre_key = random.choice(list(subgenres_data.keys()))
+            subgenre = subgenres_data[subgenre_key]
+            styles = subgenre.get("styles", [])
+            if styles:
+                return random.choice(styles)
+            else:
+                return subgenre.get("search", subgenre["name"]) # Use subgenre name if no styles
+        else:
+            return main_genre.get("search_term", main_genre["name"]) # Use main genre search_term or name if no subgenres
+
     def status(self) -> dict:
         data = {}
         for chat_id, s in self._sessions.items():
@@ -123,7 +143,7 @@ class RadioManager:
                     if not await self._fetch_playlist(s):
                         s.fails_in_row += 1
                         if s.fails_in_row >= 2:
-                            s.query = random.choice(self._settings.RADIO_GENRES)
+                            s.query = self._get_random_style_query()
                             s.fails_in_row = 0
                             await self._update_dashboard(s, status=f"🔀 Смена волны на: {s.query}")
                         await asyncio.sleep(5)
@@ -162,7 +182,7 @@ class RadioManager:
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    wait_time = 90.0
+                    wait_time = float(track_info.duration + 10) if track_info and track_info.duration else float(self._settings.RADIO_MAX_DURATION_S)
                     
                     await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                 except asyncio.TimeoutError:
@@ -185,7 +205,7 @@ class RadioManager:
             await self.stop(s.chat_id)
     
     async def _fetch_playlist(self, s: RadioSession) -> bool:
-        q = random.choice([s.query, f"{s.query} music", f"best {s.query}"])
+        q = s.query
         tracks = await self._downloader.search(q, limit=self._settings.MAX_RESULTS)
         if tracks:
             new = [t for t in tracks if t.identifier not in s.played_ids]

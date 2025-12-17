@@ -1,0 +1,418 @@
+{
+  "genres": {
+    "pop": {
+      "name": "Pop",
+      "icon": "🎤",
+      "color": "#FF6B9D",
+      "search_term": "pop hits",
+      "subgenres": {
+        "modern_pop": {
+          "name": "Modern Pop",
+          "era": "2010s-now",
+          "styles": ["dance pop", "electropop", "synth pop", "indie pop", "art pop", "hyperpop", "bedroom pop"]
+        },
+        "classic_pop": {
+          "name": "Classic Pop",
+          "era": "1980s-2000s",
+          "styles": ["80s pop", "90s pop", "2000s pop", "bubblegum pop", "teen pop", "europop"]
+        },
+        "kpop": {
+          "name": "K-Pop",
+          "era": "2000s-now",
+          "styles": ["kpop", "k-pop boy band", "k-pop girl group", "korean r&b", "korean hip hop"]
+        },
+        "latin_pop": {
+          "name": "Latin Pop",
+          "era": "1990s-now",
+          "styles": ["reggaeton", "latin pop", "bachata", "salsa", "cumbia", "dembow", "urbano latino"]
+        }
+      }
+    },
+    "hip_hop": {
+      "name": "Hip-Hop & Rap",
+      "icon": "🎤",
+      "color": "#FFD93D",
+      "search_term": "hip hop",
+      "subgenres": {
+        "modern_rap": {
+          "name": "Modern Rap",
+          "era": "2015-now",
+          "styles": ["trap", "drill", "mumble rap", "melodic rap", "rage rap", "pluggnb", "phonk"]
+        },
+        "classic_hip_hop": {
+          "name": "Classic Hip-Hop",
+          "era": "1980s-2000s",
+          "styles": ["old school hip hop", "golden age hip hop", "90s hip hop", "boom bap", "g-funk", "gangsta rap", "conscious hip hop"]
+        },
+        "alternative_rap": {
+          "name": "Alternative Rap",
+          "era": "2000s-now",
+          "styles": ["alternative hip hop", "underground hip hop", "experimental hip hop", "abstract hip hop", "jazz rap"]
+        },
+        "regional_rap": {
+          "name": "Regional Styles",
+          "era": "1990s-now",
+          "styles": ["southern hip hop", "west coast hip hop", "east coast hip hop", "midwest hip hop", "dirty south", "crunk", "hyphy", "uk hip hop", "french rap", "german rap"]
+        }
+      }
+    },
+    "rock": {
+      "name": "Rock",
+      "icon": "🎸",
+      "color": "#E74C3C",
+      "search_term": "rock music",
+      "subgenres": {
+        "classic_rock": {
+          "name": "Classic Rock",
+          "era": "1960s-1980s",
+          "styles": ["classic rock", "60s rock", "70s rock", "80s rock", "arena rock", "southern rock", "blues rock", "psychedelic rock"]
+        },
+        "hard_rock": {
+          "name": "Hard Rock & Metal",
+          "era": "1970s-now",
+          "styles": ["hard rock", "heavy metal", "thrash metal", "death metal", "black metal", "nu metal", "metalcore", "deathcore", "progressive metal"]
+        },
+        "alternative_rock": {
+          "name": "Alternative Rock",
+          "era": "1980s-now",
+          "styles": ["alternative rock", "grunge", "indie rock", "post-punk", "new wave", "britpop", "shoegaze", "dream pop"]
+        },
+        "punk": {
+          "name": "Punk",
+          "era": "1970s-now",
+          "styles": ["punk rock", "pop punk", "hardcore punk", "post-hardcore", "emo", "screamo", "skate punk"]
+        },
+        "modern_rock": {
+          "name": "Modern Rock",
+          "era": "2000s-now",
+          "styles": ["modern rock", "post-rock", "math rock", "noise rock", "stoner rock", "garage rock revival"]
+        }
+      }
+    },
+    "electronic": {
+      "name": "Electronic",
+      "icon": "🎧",
+      "color": "#9B59B6",
+      "search_term": "electronic music",
+      "subgenres": {
+        "house": {
+          "name": "House",
+          "era": "1980s-now",
+          "styles": ["house", "deep house", "tech house", "progressive house", "tropical house", "future house", "bass house", "afro house"]
+        },
+        "techno": {
+          "name": "Techno",
+          "era": "1980s-now",
+          "styles": ["techno", "minimal techno", "detroit techno", "industrial techno", "acid techno", "hard techno"]
+        },
+        "edm": {
+          "name": "EDM",
+          "era": "2010s-now",
+          "styles": ["edm", "big room", "future bass", "dubstep", "brostep", "riddim", "trap edm", "melodic dubstep"]
+        },
+        "bass_music": {
+          "name": "Bass Music",
+          "era": "2000s-now",
+          "styles": ["drum and bass", "dnb", "jungle", "breakbeat", "uk garage", "2-step", "grime", "uk bass"]
+        },
+        "trance": {
+          "name": "Trance",
+          "era": "1990s-now",
+          "styles": ["trance", "progressive trance", "uplifting trance", "psytrance", "goa trance", "vocal trance"]
+        },
+        "ambient_downtempo": {
+          "name": "Ambient & Chill",
+          "era": "1970s-now",
+          "styles": ["ambient", "chillout", "downtempo", "trip hop", "lo-fi", "chillwave", "vaporwave", "synthwave", "retrowave"]
+        },
+        "experimental_electronic": {
+          "name": "Experimental",
+          "era": "1990s-now",
+          "styles": ["idm", "glitch", "experimental electronic", "electronica", "leftfield", "uk experimental"]
+        }
+      }
+    },
+    "rnb_soul": {
+      "name": "R&B / Soul",
+      "icon": "💜",
+      "color": "#8E44AD",
+      "search_term": "r&b soul",
+      "subgenres": {
+        "modern_rnb": {
+          "name": "Modern R&B",
+          "era": "2010s-now",
+          "styles": ["modern r&b", "alternative r&b", "pnb r&b", "dark r&b", "trapsoul"]
+        },
+        "classic_rnb": {
+          "name": "Classic R&B",
+          "era": "1980s-2000s",
+          "styles": ["90s r&b", "80s r&b", "new jack swing", "quiet storm", "contemporary r&b"]
+        },
+        "soul": {
+          "name": "Soul",
+          "era": "1960s-now",
+          "styles": ["soul", "motown", "northern soul", "southern soul", "neo soul", "nu soul", "psychedelic soul"]
+        },
+        "funk": {
+          "name": "Funk",
+          "era": "1970s-now",
+          "styles": ["funk", "p-funk", "boogie", "electro funk", "synth funk", "go-go"]
+        }
+      }
+    },
+    "jazz": {
+      "name": "Jazz",
+      "icon": "🎷",
+      "color": "#2ECC71",
+      "search_term": "jazz music",
+      "subgenres": {
+        "traditional_jazz": {
+          "name": "Traditional",
+          "era": "1920s-1960s",
+          "styles": ["jazz", "swing", "bebop", "big band", "dixieland", "cool jazz", "hard bop"]
+        },
+        "modern_jazz": {
+          "name": "Modern Jazz",
+          "era": "1960s-now",
+          "styles": ["modal jazz", "free jazz", "avant-garde jazz", "post-bop", "contemporary jazz", "nu jazz"]
+        },
+        "fusion": {
+          "name": "Jazz Fusion",
+          "era": "1970s-now",
+          "styles": ["jazz fusion", "jazz funk", "smooth jazz", "acid jazz", "jazz hop", "electro jazz"]
+        }
+      }
+    },
+    "classical": {
+      "name": "Classical",
+      "icon": "🎻",
+      "color": "#3498DB",
+      "search_term": "classical music",
+      "subgenres": {
+        "periods": {
+          "name": "Classical Periods",
+          "era": "1600s-1900s",
+          "styles": ["baroque", "classical period", "romantic", "impressionist", "20th century classical"]
+        },
+        "modern_classical": {
+          "name": "Modern Classical",
+          "era": "1900s-now",
+          "styles": ["contemporary classical", "minimalism", "neoclassical", "modern classical", "orchestral"]
+        },
+        "crossover": {
+          "name": "Crossover",
+          "era": "1990s-now",
+          "styles": ["classical crossover", "epic orchestral", "cinematic", "film score", "video game music", "trailer music"]
+        }
+      }
+    },
+    "country": {
+      "name": "Country",
+      "icon": "🤠",
+      "color": "#D35400",
+      "search_term": "country music",
+      "subgenres": {
+        "traditional_country": {
+          "name": "Traditional",
+          "era": "1920s-1980s",
+          "styles": ["classic country", "honky tonk", "outlaw country", "country western", "bluegrass", "country folk"]
+        },
+        "modern_country": {
+          "name": "Modern Country",
+          "era": "1990s-now",
+          "styles": ["modern country", "country pop", "bro country", "country rock", "alt country", "americana"]
+        }
+      }
+    },
+    "reggae_caribbean": {
+      "name": "Reggae & Caribbean",
+      "icon": "🌴",
+      "color": "#27AE60",
+      "search_term": "reggae",
+      "subgenres": {
+        "reggae": {
+          "name": "Reggae",
+          "era": "1960s-now",
+          "styles": ["reggae", "roots reggae", "dub", "dancehall", "lovers rock", "ragga"]
+        },
+        "caribbean": {
+          "name": "Caribbean",
+          "era": "1950s-now",
+          "styles": ["ska", "rocksteady", "soca", "calypso", "afrobeats", "afroswing", "amapiano"]
+        }
+      }
+    },
+    "world": {
+      "name": "World Music",
+      "icon": "🌍",
+      "color": "#1ABC9C",
+      "search_term": "world music",
+      "subgenres": {
+        "african": {
+          "name": "African",
+          "era": "1960s-now",
+          "styles": ["afrobeats", "afropop", "highlife", "juju", "mbalax", "kwaito", "gqom", "amapiano"]
+        },
+        "middle_eastern": {
+          "name": "Middle Eastern",
+          "era": "ancient-now",
+          "styles": ["arabic music", "turkish music", "persian music", "israeli music", "rai", "chaabi"]
+        },
+        "asian": {
+          "name": "Asian",
+          "era": "ancient-now",
+          "styles": ["jpop", "jrock", "city pop", "bollywood", "indian classical", "c-pop", "cantopop", "mandopop"]
+        },
+        "latin_traditional": {
+          "name": "Latin Traditional",
+          "era": "1900s-now",
+          "styles": ["bossa nova", "samba", "tango", "flamenco", "mariachi", "norteño", "corridos"]
+        },
+        "european": {
+          "name": "European",
+          "era": "various",
+          "styles": ["celtic", "irish folk", "french chanson", "german schlager", "italian pop", "russian pop", "balkan music"]
+        }
+      }
+    },
+    "folk_acoustic": {
+      "name": "Folk & Acoustic",
+      "icon": "🪕",
+      "color": "#795548",
+      "search_term": "folk music",
+      "subgenres": {
+        "folk": {
+          "name": "Folk",
+          "era": "1950s-now",
+          "styles": ["folk", "folk rock", "indie folk", "contemporary folk", "traditional folk", "anti-folk", "freak folk"]
+        },
+        "singer_songwriter": {
+          "name": "Singer-Songwriter",
+          "era": "1960s-now",
+          "styles": ["singer songwriter", "acoustic", "unplugged", "coffeehouse", "soft rock"]
+        }
+      }
+    },
+    "blues": {
+      "name": "Blues",
+      "icon": "🎸",
+      "color": "#2980B9",
+      "search_term": "blues music",
+      "subgenres": {
+        "blues_styles": {
+          "name": "Blues Styles",
+          "era": "1900s-now",
+          "styles": ["blues", "delta blues", "chicago blues", "electric blues", "blues rock", "modern blues", "soul blues"]
+        }
+      }
+    },
+    "gospel_christian": {
+      "name": "Gospel & Christian",
+      "icon": "✝️",
+      "color": "#F39C12",
+      "search_term": "gospel music",
+      "subgenres": {
+        "gospel": {
+          "name": "Gospel",
+          "era": "1920s-now",
+          "styles": ["gospel", "contemporary gospel", "southern gospel", "urban gospel", "choir"]
+        },
+        "christian": {
+          "name": "Christian Music",
+          "era": "1970s-now",
+          "styles": ["christian rock", "christian pop", "worship", "praise", "ccm", "christian hip hop"]
+        }
+      }
+    }
+  },
+  "moods": {
+    "energy": {
+      "name": "By Energy",
+      "options": ["chill", "mellow", "upbeat", "energetic", "intense", "aggressive"]
+    },
+    "feeling": {
+      "name": "By Feeling",
+      "options": ["happy", "sad", "romantic", "melancholic", "angry", "peaceful", "euphoric", "dark"]
+    },
+    "activity": {
+      "name": "By Activity",
+      "options": ["workout", "party", "study", "sleep", "driving", "meditation", "cooking", "gaming"]
+    }
+  },
+  "decades": {
+    "name": "By Decade",
+    "options": [
+      {"id": "1920s", "name": "1920s", "desc": "Jazz Age"},
+      {"id": "1930s", "name": "1930s", "desc": "Swing Era"},
+      {"id": "1940s", "name": "1940s", "desc": "Big Band"},
+      {"id": "1950s", "name": "1950s", "desc": "Rock & Roll Birth"},
+      {"id": "1960s", "name": "1960s", "desc": "British Invasion"},
+      {"id": "1970s", "name": "1970s", "desc": "Disco & Punk"},
+      {"id": "1980s", "name": "1980s", "desc": "Synth & MTV"},
+      {"id": "1990s", "name": "1990s", "desc": "Grunge & Hip-Hop"},
+      {"id": "2000s", "name": "2000s", "desc": "Digital Revolution"},
+      {"id": "2010s", "name": "2010s", "desc": "Streaming Era"},
+      {"id": "2020s", "name": "2020s", "desc": "TikTok Generation"}
+    ]
+  },
+  "trending": {
+    "name": "Trending Now",
+    "searches": [
+      "tiktok viral hits",
+      "spotify top 50",
+      "new music friday",
+      "viral hits 2024",
+      "trending songs",
+      "best new music"
+    ]
+  },
+  "top_searches": {
+    "genres": [
+      "pop hits 2024",
+      "hip hop hits",
+      "trap music",
+      "house music",
+      "techno music",
+      "rock classics",
+      "indie music",
+      "r&b songs",
+      "jazz music",
+      "classical music",
+      "country music",
+      "reggaeton hits",
+      "k-pop music",
+      "edm music",
+      "lo-fi beats"
+    ],
+    "moods": [
+      "chill music",
+      "relaxing music",
+      "happy music",
+      "sad songs",
+      "workout music",
+      "party music",
+      "study music",
+      "sleep music",
+      "romantic songs",
+      "meditation music"
+    ],
+    "decades": [
+      "80s hits",
+      "90s hits",
+      "2000s hits",
+      "2010s hits",
+      "old school hip hop",
+      "classic rock",
+      "disco music",
+      "retro music"
+    ],
+    "trending": [
+      "tiktok viral songs",
+      "trending music 2024",
+      "new releases",
+      "top charts",
+      "viral hits",
+      "best songs 2024"
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import List, Dict, Any
 from pydantic import BaseSettings
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     BASE_URL: str
     ADMIN_IDS: str = ""
     COOKIES_CONTENT: str = ""
+    
+    GENRE_DATA: Dict[str, Any] = {}
 
     @property
     def ADMIN_ID_LIST(self) -> List[int]:
@@ -44,55 +47,22 @@ class Settings(BaseSettings):
     PLAY_MAX_DURATION_S: int = 900
     PLAY_MAX_FILE_SIZE_MB: int = 50
 
-    # Fallback
-    RADIO_GENRES: List[str] = ["rock", "pop", "jazz", "lofi"] 
-
-    # ==========================================
-    # 🎵 МУЗЫКАЛЬНЫЙ КАТАЛОГ (ОПТИМИЗИРОВАННЫЙ)
-    # ==========================================
-    
-    MUSIC_CATALOG: Dict[str, Any] = {
-        "🔥 Топ-чарты": {
-            "Global Top 50": "top 50 global official playlist -mix",
-            "Viral Hits": "tiktok viral hits -playlist -mix",
-        },
-        "🎶 По настроению": {
-            "🏃‍♂️ Тренировка": "gym workout music motivational -mix -playlist",
-            "☕️ Чилаут": "chill lofi hip hop beats to relax -mix -playlist",
-            "🎉 Вечеринка": "party hits pop dance -mix -playlist",
-            "❤️ Романтика": "romantic love songs -mix -playlist",
-            "😢 Грусть": "sad songs for broken hearts -mix -playlist",
-        },
-        "📅 По десятилетиям": {
-            "🕺 80-е": "80s greatest hits -mix -playlist",
-            "🎸 90-е": "90s greatest hits -mix -playlist",
-            "✨ 00-е": "2000s greatest hits -mix -playlist",
-            "📱 10-е": "2010s greatest hits -mix -playlist",
-        },
-        "🎸 Рок": {
-            "Classic Rock": "classic rock anthems 70s 80s -mix -playlist",
-            "Hard Rock & Metal": "hard rock heavy metal -mix -playlist",
-            "Alternative & Indie": "90s 2000s alternative rock indie -mix -playlist",
-            "Punk Rock": "punk rock classics ramones misfits -mix -playlist",
-        },
-        "🎤 Хип-хоп": {
-            "Old-School 80s & 90s": "old school hip hop 80s 90s -mix -playlist",
-            "Golden Age": "90s boom bap hip hop wu-tang nas -mix -playlist",
-            "Modern Trap": "trap music -mix -playlist",
-            "R&B Classics": "90s 2000s r&b classics -mix -playlist",
-        },
-        "🎧 Электроника": {
-            "House": "deep house -mix -playlist",
-            "Techno": "techno club -mix -playlist",
-            "Trance": "vocal trance anthems -mix -playlist",
-            "Drum & Bass": "liquid drum & bass -mix -playlist",
-        },
-        "✨ Поп": {
-            "80s Synth-Pop": "synth-pop 80s hits -mix -playlist",
-            "90s & 00s Pop": "90s 2000s pop hits -mix -playlist",
-            "Modern Pop": "today's top pop hits -mix -playlist",
-        },
-    }
-
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    genres_path = settings.BASE_DIR / "genres.json"
+    if genres_path.exists():
+        with open(genres_path, "r", encoding="utf-8") as f:
+            settings.GENRE_DATA = json.load(f)
+    else:
+        # Fallback in case genres.json is missing
+        settings.GENRE_DATA = {
+            "genres": {
+                "pop": {"name": "Pop", "search_term": "pop hits"},
+                "rock": {"name": "Rock", "search_term": "rock music"},
+                "hip_hop": {"name": "Hip-Hop", "search_term": "hip hop"},
+            },
+            "trending": {
+                "searches": ["tiktok viral hits"]
+            }
+        }
+    return settings
