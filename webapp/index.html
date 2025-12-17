@@ -3,65 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cyber Player v2.2 DEPLOYED</title>
-    <link rel="stylesheet" href="style.css?v=2.2">
+    <title>Solar Player</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="style.css?v=3.1">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
-    <div class="ambient-light"></div>
-
-    <div class="player-ui">
-        <!-- Top Bar -->
-        <div style="display: flex; justify-content: space-between; color: #666;">
-            <span class="material-icons-round" onclick="window.close()">keyboard_arrow_down</span>
-            <span style="font-size: 12px; letter-spacing: 1px;">LIVE RADIO</span>
-            <span class="material-icons-round" id="btn-playlist">queue_music</span>
-        </div>
-
-        <!-- Cover -->
-        <div class="cover-container">
-            <canvas id="visualizer"></canvas>
-            <div class="cover-art">💿</div>
-        </div>
-
-        <!-- Info -->
-        <div>
-            <div class="track-meta">
-                <div class="title" id="track-title">Loading...</div>
-                <div class="artist" id="track-artist">Connecting to satellite...</div>
+    <div class="player-container">
+        <!-- Header -->
+        <div class="header">
+            <span class="material-icons-round header-btn" onclick="window.close()">keyboard_arrow_down</span>
+            <div class="live-badge">
+                <span class="live-dot"></span>
+                LIVE
             </div>
+            <span class="material-icons-round header-btn" id="btn-playlist">queue_music</span>
+        </div>
 
-            <div class="progress-container">
+        <!-- Sun Visualizer -->
+        <div class="visualizer-wrapper">
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <!-- Track Info -->
+        <div class="track-info">
+            <div class="title" id="track-title">Loading...</div>
+            <div class="artist" id="track-artist">Connecting...</div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-section">
+            <div class="progress-bar">
                 <div class="progress-fill" id="progress-bar"></div>
             </div>
-            <div class="timers">
+            <div class="time-display">
                 <span id="curr-time">0:00</span>
                 <span id="dur-time">0:00</span>
             </div>
+        </div>
 
-            <!-- Controls -->
-            <div class="controls">
-                <div class="btn" id="btn-prev"><span class="material-icons-round">skip_previous</span></div>
-                <div class="btn btn-play" id="btn-play-pause">
-                    <span class="material-icons-round" id="icon-play">play_arrow</span>
-                </div>
-                <div class="btn" id="btn-next"><span class="material-icons-round">skip_next</span></div>
-            </div>
+        <!-- Controls -->
+        <div class="controls">
+            <button class="ctrl-btn" id="btn-prev">
+                <span class="material-icons-round">skip_previous</span>
+            </button>
+            <button class="ctrl-btn ctrl-btn-main" id="btn-play-pause">
+                <span class="material-icons-round" id="icon-play">play_arrow</span>
+            </button>
+            <button class="ctrl-btn" id="btn-next">
+                <span class="material-icons-round">skip_next</span>
+            </button>
         </div>
     </div>
 
-    <!-- Playlist -->
+    <!-- Playlist Drawer -->
     <div class="playlist-drawer" id="playlist-drawer">
-        <div class="drag-handle" onclick="togglePlaylist()"></div>
-        <div style="color: #666; font-size: 12px; margin-bottom: 10px;">UP NEXT</div>
-        <div id="playlist-content" style="color: white; font-weight: 600;">
-            Wait for update...
+        <div class="drawer-handle" onclick="togglePlaylist()"></div>
+        <div class="drawer-title">UP NEXT</div>
+        <div id="playlist-content" class="playlist-items">
+            Загрузка...
         </div>
     </div>
 
     <audio id="audio-player" crossorigin="anonymous"></audio>
-    <script src="script.js?v=2.2"></script>
+    <script src="script.js?v=3.1"></script>
 </body>
 </html>
