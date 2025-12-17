@@ -70,7 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSeeking = false;
     let playerPlaylist = [];
     let currentTrackIndex = -1;
-    let isLoading = false;
+    let isLoading = false; // Флаг для загрузки плейлиста/жанра
+    let isAudioLoading = false; // НОВЫЙ ФЛАГ: для загрузки конкретного аудио
     let audioLoadTimeout = null;
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -138,7 +139,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === CORE LOGIC ===
     function playTrack(index) {
-        if (isLoading || index < 0 || index >= playerPlaylist.length) {
+        console.log('[playTrack] НАЧАЛО ВЫПОЛНЕНИЯ playTrack'); // НОВЫЙ ЛОГ
+        if (isAudioLoading || index < 0 || index >= playerPlaylist.length) {
             if (index >= playerPlaylist.length) {
                 playIcon.textContent = 'play_arrow';
                 titleEl.textContent = "Playlist finished";
@@ -146,12 +148,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTrackIndex = -1;
                 audio.src = "";
                 audio.load();
+                isAudioLoading = false; // Сброс флага при завершении плейлиста
             }
+            console.log('[playTrack] Возврат из playTrack: isAudioLoading=' + isAudioLoading + ', index=' + index);
             return;
         }
 
         clearAudioTimeouts();
-        isLoading = true;
+        isAudioLoading = true; // Устанавливаем флаг, что аудио начинает загружаться
         currentTrackIndex = index;
         const track = playerPlaylist[index];
 
@@ -165,24 +169,23 @@ document.addEventListener('DOMContentLoaded', () => {
         audio.removeEventListener('error', handleError);
         audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
 
-        // Use URL from backend if available, otherwise construct it
-        const audioUrl = track.url || `/audio/${track.identifier}`;
-        console.log('Loading track:', track.title, 'URL:', audioUrl);
+        const audioUrl = track.url || `/audio/${track.identifier}`; 
+        console.log('[playTrack] 1. Устанавливаю audio.src:', audioUrl);
         audio.src = audioUrl;
 
         function handleCanPlay() {
-            console.log('Track ready to play:', track.title);
+            console.log('[playTrack] 4. Событие "canplay" сработало. Вызываю safePlay.');
             clearAudioTimeouts();
             safePlay().finally(() => {
-                isLoading = false;
+                isAudioLoading = false; // Сброс флага после попытки воспроизведения
             });
             audio.removeEventListener('canplay', handleCanPlay);
         }
 
         function handleError(e) {
-            console.error("Error loading track:", track.title, "URL:", audioUrl, "Error:", e);
+            console.error("[playTrack] 5. Событие 'error' сработало:", track.title, "URL:", audioUrl, "Error:", e);
             clearAudioTimeouts();
-            isLoading = false;
+            isAudioLoading = false; // Сброс флага при ошибке
             titleEl.textContent = "Track unavailable";
             artistEl.textContent = "Skipping...";
             setTimeout(() => playNextTrack(), 1500);
@@ -190,29 +193,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function handleLoadedMetadata() {
+            console.log('[playTrack] Событие "loadedmetadata" сработало.');
             clearAudioTimeouts();
             audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
         }
 
         // Set timeout to prevent hanging on bad sources
         audioLoadTimeout = setTimeout(() => {
-            if (isLoading) {
+            if (isAudioLoading) { // Проверяем НОВЫЙ ФЛАГ
                 console.warn("Track load timeout, skipping...");
-                isLoading = false;
+                isAudioLoading = false; // Сброс флага при таймауте
                 playNextTrack();
             }
-        }, 10000); // 10 second timeout
+        }, 10000); 
 
         audio.addEventListener('canplay', handleCanPlay);
         audio.addEventListener('error', handleError);
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-        audio.load();
         
+        try {
+            console.log('[playTrack] 2. Вызываю audio.load().');
+            audio.load();
+            console.log('[playTrack] 3. audio.load() выполнен без ошибок.');
+        } catch (e) {
+            console.error('[playTrack] Ошибка при вызове audio.load():', e);
+        }
+
         updateMediaSessionMetadata();
     }
 
     async function selectGenre(name, searchQuery) {
-        if (isLoading) return;
+        if (isLoading) {
+            console.log("selectGenre: Уже идет загрузка, игнорируем выбор.");
+            return;
+        }
         isLoading = true;
         currentGenre = name;
         currentGenreEl.textContent = name.toUpperCase();
@@ -225,21 +239,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`/api/player/playlist?query=${encodeURIComponent(searchQuery)}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            console.log('Playlist API response:', data); // DEBUG
+            console.log('Playlist API response:', data);
             playerPlaylist = data.playlist || [];
-            console.log('First track:', playerPlaylist[0]); // DEBUG
+            console.log('First track:', playerPlaylist[0]);
             if (playerPlaylist.length > 0) {
                 playTrack(0);
             } else {
                 titleEl.textContent = "No tracks found";
                 artistEl.textContent = "Try another genre";
-                isLoading = false;
             }
         } catch (e) {
             console.error('Failed to fetch playlist:', e);
             titleEl.textContent = "Error loading playlist";
             artistEl.textContent = "Please try again";
-            isLoading = false;
+        } finally {
+            isLoading = false; // Сбрасываем флаг загрузки в любом случае
         }
         haptic.impact('medium');
     }
