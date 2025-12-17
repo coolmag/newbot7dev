@@ -64,40 +64,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderLoop() {
-        requestAnimationFrame(renderLoop); // Loop forever
+        requestAnimationFrame(renderLoop);
         if (!analyser) return;
+
         analyser.getByteFrequencyData(dataArray);
         
-        // We now use the canvas's own width and height. These are the high-res values.
         const w = canvas.width;
         const h = canvas.height;
-        const cx = w / 2; 
+        const cx = w / 2;
         const cy = h / 2;
-        // The radius needs to be scaled by the DPR to match the new coordinate system.
-        const radius = 95 * (window.devicePixelRatio || 1);
+        const dpr = window.devicePixelRatio || 1;
+
+        // --- Musical Sun Properties ---
+        const sunRadius = 55 * dpr;
+        const maxRayLength = 60 * dpr;
+        const numRays = dataArray.length / 2; // Use lower frequencies for more stable rays
 
         ctx.clearRect(0, 0, w, h);
         
-        // Draw Circle Waves
+        // 1. Draw the central sun circle with gradient
+        const gradient = ctx.createRadialGradient(cx, cy, sunRadius * 0.5, cx, cy, sunRadius);
+        gradient.addColorStop(0, '#FFD700');
+        gradient.addColorStop(1, '#FFA500');
+
         ctx.beginPath();
-        for (let i = 0; i < dataArray.length; i++) {
-            const val = dataArray[i];
-            const angle = (i / dataArray.length) * Math.PI * 2;
-            
-            // The bar height is now scaled by DPR as well.
-            const r = radius + (val / 4) * (window.devicePixelRatio || 1);
-            
-            const x = cx + Math.cos(angle) * r;
-            const y = cy + Math.sin(angle) * r;
-            
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+        ctx.arc(cx, cy, sunRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = '#FFA500';
+        ctx.shadowBlur = 25 * dpr;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // 2. Draw the music-reactive rays
+        ctx.beginPath();
+        for (let i = 0; i < numRays; i++) {
+            const value = dataArray[i]; // 0-255
+            const percent = value / 255;
+            const angle = (i / numRays) * 2 * Math.PI - Math.PI / 2;
+
+            const rayLength = percent * maxRayLength;
+            const startX = cx + Math.cos(angle) * sunRadius;
+            const startY = cy + Math.sin(angle) * sunRadius;
+            const endX = cx + Math.cos(angle) * (sunRadius + rayLength);
+            const endY = cy + Math.sin(angle) * (sunRadius + rayLength);
+
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
         }
-        ctx.closePath();
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 3 * (window.devicePixelRatio || 1); // Scale line width for consistency.
-        ctx.shadowBlur = 15 * (window.devicePixelRatio || 1);
-        ctx.shadowColor = '#00ff88';
+        ctx.strokeStyle = '#FFA500';
+        ctx.lineWidth = 4 * dpr;
+        ctx.lineCap = 'round';
         ctx.stroke();
     }
 
