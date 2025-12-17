@@ -2,6 +2,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const tg = window.Telegram.WebApp;
     tg.expand();
 
+    // === HAPTIC FEEDBACK HELPER ===
+    const haptic = {
+        isSupported: tg.isVersionAtLeast('6.1'),
+        impact: (style = 'medium') => {
+            if (haptic.isSupported) {
+                tg.HapticFeedback.impactOccurred(style);
+            }
+        },
+        notification: (type = 'success') => {
+            if (haptic.isSupported) {
+                tg.HapticFeedback.notificationOccurred(type);
+            }
+        },
+        selection: () => {
+            if (haptic.isSupported) {
+                tg.HapticFeedback.selectionChanged();
+            }
+        }
+    };
+
     // === ELEMENTS ===
     const audio = document.getElementById('audio-player');
     const playBtn = document.getElementById('btn-play-pause');
@@ -21,21 +41,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentGenreEl = document.getElementById('current-genre');
     const playbackSpeed = document.getElementById('playback-speed');
     const canvas = document.getElementById('visualizer');
-    const ctx = canvas.getContext('2d');
-
-    // Screens
+    const ctx = canvas?.getContext('2d');
     const screenPlayer = document.getElementById('screen-player');
     const screenGenres = document.getElementById('screen-genres');
     const btnGenres = document.getElementById('btn-genres');
     const btnBackPlayer = document.getElementById('btn-back-player');
-
-    // Drawers
     const subgenreDrawer = document.getElementById('subgenre-drawer');
     const playlistDrawer = document.getElementById('playlist-drawer');
     const overlay = document.getElementById('overlay');
     const btnPlaylist = document.getElementById('btn-playlist');
-
-    // Genre elements
     const genreGrid = document.getElementById('genre-grid');
     const trendingChips = document.getElementById('trending-chips');
     const decadeChips = document.getElementById('decade-chips');
@@ -52,119 +66,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSeeking = false;
     let playerPlaylist = [];
     let currentTrackIndex = -1;
+    let isLoading = false;
+    let audioLoadTimeout = null;
 
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
-
-    // === MEDIA SESSION API ===
-    function setupMediaSession() {
-        if (!('mediaSession' in navigator)) return;
-        
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: 'Cyber Radio',
-            artist: 'Select a genre to start',
-            album: 'v7.0',
-            artwork: [{ src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml' }]
-        });
-
-        navigator.mediaSession.setActionHandler('play', () => { if(audio.src) { audio.play(); } });
-        navigator.mediaSession.setActionHandler('pause', () => { if(audio.src) { audio.pause(); } });
-        navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-            if (audio.currentTime > 3) {
-                audio.currentTime = 0;
-            } else {
-                playPrevTrack();
-            }
-        });
-        navigator.mediaSession.setActionHandler('seekbackward', (d) => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10)); });
-        navigator.mediaSession.setActionHandler('seekforward', (d) => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); });
-        navigator.mediaSession.setActionHandler('seekto', (d) => { if(d.seekTime) audio.currentTime = d.seekTime; });
-    }
-
-    function updateMediaSessionMetadata() {
-        if (!('mediaSession' in navigator)) return;
-        const track = playerPlaylist[currentTrackIndex];
-        if (!track) return;
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: track.title || 'Unknown Track',
-            artist: track.artist || 'Unknown Artist',
-            album: currentGenre || 'Cyber Radio',
-            artwork: [{ src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml' }]
-        });
-    }
-
-    function updateMediaSessionPosition() {
-        if (!('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) return;
-        if (audio.duration && isFinite(audio.duration)) {
-            try {
-                navigator.mediaSession.setPositionState({
-                    duration: audio.duration,
-                    playbackRate: audio.playbackRate,
-                    position: audio.currentTime
-                });
-            } catch (e) {
-                console.error("Failed to set media session position:", e);
-            }
-        }
-    }
-
-    // === BACKGROUND PLAYBACK ===
-    function setupBackgroundPlayback() {
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden && !audio.paused && audioCtx?.state === 'suspended') {
-                audioCtx.resume();
-            }
-        });
-    }
-
-    // === SEEK FUNCTIONALITY ===
-    function setupSeekBar() {
-        let isDragging = false;
-        const getSeekPosition = (e) => {
-            const rect = progressContainer.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            let percent = (clientX - rect.left) / rect.width;
-            return Math.max(0, Math.min(1, percent));
-        };
-        const updateSeekUI = (percent) => {
-            progressEl.style.width = `${percent * 100}%`;
-            progressHandle.style.left = `${percent * 100}%`;
-            if (audio.duration && isFinite(audio.duration)) {
-                currTimeEl.textContent = formatTime(percent * audio.duration);
-            }
-        };
-        const startSeek = (e) => {
-            if (!audio.duration || !isFinite(audio.duration)) return;
-            isDragging = true;
-            isSeeking = true;
-            progressContainer.classList.add('seeking');
-            updateSeekUI(getSeekPosition(e));
-            tg.HapticFeedback.impactOccurred('light');
-        };
-        const moveSeek = (e) => {
-            if (!isDragging) return;
-            e.preventDefault();
-            updateSeekUI(getSeekPosition(e));
-        };
-        const endSeek = (e) => {
-            if (!isDragging) return;
-            isDragging = false;
-            isSeeking = false;
-            progressContainer.classList.remove('seeking');
-            const percent = getSeekPosition(e.changedTouches ? e.changedTouches[0] : e);
-            if (audio.duration && isFinite(audio.duration)) {
-                audio.currentTime = percent * audio.duration;
-            }
-            tg.HapticFeedback.impactOccurred('medium');
-        };
-        progressContainer.addEventListener('mousedown', startSeek);
-        document.addEventListener('mousemove', moveSeek);
-        document.addEventListener('mouseup', endSeek);
-        progressContainer.addEventListener('touchstart', startSeek, { passive: false });
-        document.addEventListener('touchmove', moveSeek, { passive: false });
-        document.addEventListener('touchend', endSeek);
-    }
 
     // === GENRE DATABASE ===
     const GENRES = {
@@ -175,59 +81,135 @@ document.addEventListener('DOMContentLoaded', () => {
         rnb: { name: "R&B / Soul", icon: "💜", color: "#8E44AD", subgenres: { modern: { name: "Modern R&B", search: "r&b hits 2024", styles: "Alternative R&B, Trapsoul, PBR&B" }, classic: { name: "Classic R&B", search: "90s r&b", styles: "New Jack Swing, Quiet Storm" }, soul: { name: "Soul", search: "soul music", styles: "Neo Soul, Motown, Northern Soul" }, funk: { name: "Funk", search: "funk music", styles: "P-Funk, Boogie, Electro Funk" } } },
         jazz: { name: "Jazz", icon: "🎷", color: "#3498DB", subgenres: { classic: { name: "Classic Jazz", search: "jazz classics", styles: "Bebop, Swing, Cool Jazz" }, modern: { name: "Modern Jazz", search: "modern jazz", styles: "Nu Jazz, Acid Jazz, Jazz Fusion" }, smooth: { name: "Smooth Jazz", search: "smooth jazz", styles: "Contemporary, Chill Jazz" } } },
     };
-    const TRENDING = [ { name: "🔥 Viral TikTok", search: "tiktok viral hits 2024" }, { name: "📈 Top Charts", search: "top 50 hits 2024" }, { name: "🆕 New Releases", search: "new music 2024" }, { name: "💎 Best of 2024", search: "best songs 2024" } ];
-    const DECADES = [ { name: "2020s", search: "2020s hits" }, { name: "2010s", search: "2010s hits" }, { name: "2000s", search: "2000s hits" }, { name: "90s", search: "90s hits" }, { name: "80s", search: "80s hits" }, { name: "70s", search: "70s hits" } ];
-    const MOODS = [ { name: "😌 Chill", search: "chill relaxing music" }, { name: "🎉 Party", search: "party music hits" }, { name: "💪 Workout", search: "workout motivation music" }, { name: "😢 Sad", search: "sad songs" }, { name: "❤️ Romantic", search: "love songs romantic" }, { name: "📚 Focus", search: "study focus music" }, { name: "😴 Sleep", search: "sleep relaxation music" } ];
+    const TRENDING = [ 
+        { name: "🔥 Viral TikTok", search: "tiktok viral hits 2024" }, 
+        { name: "📈 Top Charts", search: "top 50 hits 2024" }, 
+        { name: "🆕 New Releases", search: "new music 2024" }, 
+        { name: "💎 Best of 2024", search: "best songs 2024" } 
+    ];
+    const DECADES = [ 
+        { name: "2020s", search: "2020s hits" }, 
+        { name: "2010s", search: "2010s hits" }, 
+        { name: "2000s", search: "2000s hits" }, 
+        { name: "90s", search: "90s hits" }, 
+        { name: "80s", search: "80s hits" }, 
+        { name: "70s", search: "70s hits" } 
+    ];
+    const MOODS = [ 
+        { name: "😌 Chill", search: "chill relaxing music" }, 
+        { name: "🎉 Party", search: "party music hits" }, 
+        { name: "💪 Workout", search: "workout motivation music" }, 
+        { name: "😢 Sad", search: "sad songs" }, 
+        { name: "❤️ Romantic", search: "love songs romantic" }, 
+        { name: "📚 Focus", search: "study focus music" }, 
+        { name: "😴 Sleep", search: "sleep relaxation music" } 
+    ];
 
-    // === UI & PLAYER LOGIC ===
-    function initGenresUI() {
-        const createChips = (container, items) => {
-            items.forEach(item => {
-                const chip = document.createElement('div');
-                chip.className = 'chip';
-                chip.textContent = item.name;
-                chip.onclick = () => selectGenre(item.name, item.search);
-                container.appendChild(chip);
-            });
-        };
-        createChips(trendingChips, TRENDING);
-        createChips(decadeChips, DECADES);
-        createChips(moodChips, MOODS);
-
-        Object.entries(GENRES).forEach(([key, genre]) => {
-            const card = document.createElement('div');
-            card.className = 'genre-card';
-            card.style.setProperty('--card-color', genre.color);
-            card.innerHTML = `<span class="genre-icon">${genre.icon}</span><span class="genre-name">${genre.name}</span><span class="genre-count">${Object.keys(genre.subgenres).length} styles</span>`;
-            card.onclick = () => openSubgenres(key, genre);
-            genreGrid.appendChild(card);
+    // === AUDIO HELPERS ===
+    function safePlay() {
+        if (!audio.src || isLoading) return Promise.resolve();
+        
+        return audio.play().catch(err => {
+            console.error("Playback error:", err.name, err.message);
+            if (err.name === 'NotSupportedError') {
+                titleEl.textContent = "Audio format not supported";
+                artistEl.textContent = "Trying next track...";
+                setTimeout(() => playNextTrack(), 1000);
+            } else if (err.name === 'NotAllowedError') {
+                console.log("Playback prevented by browser policy");
+            }
+            playIcon.textContent = 'play_arrow';
         });
     }
 
-    function openSubgenres(key, genre) {
-        drawerIcon.textContent = genre.icon;
-        drawerTitle.textContent = genre.name;
-        subgenreList.innerHTML = '';
-        Object.entries(genre.subgenres).forEach(([subKey, sub]) => {
-            const item = document.createElement('div');
-            item.className = 'subgenre-item';
-            item.innerHTML = `<span class="material-icons-round">play_circle</span><div class="subgenre-info"><div class="subgenre-name">${sub.name}</div><div class="subgenre-styles">${sub.styles}</div></div><span class="material-icons-round" style="opacity:0.3">chevron_right</span>`;
-            item.onclick = () => { selectGenre(sub.name, sub.search); closeDrawers(); };
-            subgenreList.appendChild(item);
-        });
-        openDrawer(subgenreDrawer);
+    function clearAudioTimeouts() {
+        if (audioLoadTimeout) {
+            clearTimeout(audioLoadTimeout);
+            audioLoadTimeout = null;
+        }
+    }
+
+    // === CORE LOGIC ===
+    function playTrack(index) {
+        if (isLoading || index < 0 || index >= playerPlaylist.length) {
+            if (index >= playerPlaylist.length) {
+                playIcon.textContent = 'play_arrow';
+                titleEl.textContent = "Playlist finished";
+                artistEl.textContent = "Select a new genre";
+                currentTrackIndex = -1;
+                audio.src = "";
+                audio.load();
+            }
+            return;
+        }
+
+        clearAudioTimeouts();
+        isLoading = true;
+        currentTrackIndex = index;
+        const track = playerPlaylist[index];
+
+        titleEl.textContent = track.title || 'Unknown';
+        artistEl.textContent = track.artist || 'Unknown';
+        
+        audio.pause();
+        
+        // Remove old listeners to prevent memory leaks
+        audio.removeEventListener('canplay', handleCanPlay);
+        audio.removeEventListener('error', handleError);
+        audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+
+        audio.src = `/audio/${track.identifier}`;
+
+        function handleCanPlay() {
+            clearAudioTimeouts();
+            safePlay().finally(() => {
+                isLoading = false;
+            });
+            audio.removeEventListener('canplay', handleCanPlay);
+        }
+
+        function handleError(e) {
+            console.error("Error loading track:", track.title, e);
+            clearAudioTimeouts();
+            isLoading = false;
+            titleEl.textContent = "Track unavailable";
+            artistEl.textContent = "Skipping...";
+            setTimeout(() => playNextTrack(), 1500);
+            audio.removeEventListener('error', handleError);
+        }
+
+        function handleLoadedMetadata() {
+            clearAudioTimeouts();
+            audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        }
+
+        // Set timeout to prevent hanging on bad sources
+        audioLoadTimeout = setTimeout(() => {
+            if (isLoading) {
+                console.warn("Track load timeout, skipping...");
+                isLoading = false;
+                playNextTrack();
+            }
+        }, 10000); // 10 second timeout
+
+        audio.addEventListener('canplay', handleCanPlay);
+        audio.addEventListener('error', handleError);
+        audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+        audio.load();
+        
+        updateMediaSessionMetadata();
     }
 
     async function selectGenre(name, searchQuery) {
+        if (isLoading) return;
+        isLoading = true;
         currentGenre = name;
         currentGenreEl.textContent = name.toUpperCase();
         titleEl.textContent = "Loading playlist...";
         artistEl.textContent = "Accessing the Grid...";
         closeGenresScreen();
         closeDrawers();
-        playerPlaylist = [];
-        currentTrackIndex = -1;
-
+        
         try {
             const response = await fetch(`/api/player/playlist?query=${encodeURIComponent(searchQuery)}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -238,195 +220,329 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 titleEl.textContent = "No tracks found";
                 artistEl.textContent = "Try another genre";
+                isLoading = false;
             }
         } catch (e) {
             console.error('Failed to fetch playlist:', e);
             titleEl.textContent = "Error loading playlist";
             artistEl.textContent = "Please try again";
+            isLoading = false;
         }
-        tg.HapticFeedback.impactOccurred('medium');
-    }
-
-    function playTrack(index) {
-        if (index < 0 || index >= playerPlaylist.length) {
-            playIcon.textContent = 'play_arrow';
-            titleEl.textContent = "Playlist finished";
-            artistEl.textContent = "Select a new genre";
-            currentTrackIndex = -1;
-            // Clear current audio source to prevent playing phantom audio
-            audio.src = ""; 
-            audio.load();
-            return;
-        }
-
-        currentTrackIndex = index;
-        const track = playerPlaylist[index];
-
-        titleEl.textContent = track.title || 'Unknown';
-        artistEl.textContent = track.artist || 'Unknown';
-        
-        // Stop current playback and unload media before setting new source
-        audio.pause();
-        audio.src = ""; // Unload the current media
-        audio.load(); // Apply the empty src
-        
-        // Set the new source
-        audio.src = `/audio/${track.identifier}`;
-        
-        // Use an event listener to play only when ready
-        const canPlayHandler = () => {
-            audio.play().catch(e => {
-                console.error("Play failed:", e);
-                playIcon.textContent = 'play_arrow';
-            });
-            audio.removeEventListener('canplay', canPlayHandler); // Clean up listener
-        };
-        audio.addEventListener('canplay', canPlayHandler);
-
-        initAudio(); // Ensure audio context is ready
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-        
-        playIcon.textContent = 'pause'; // Assume it will play if ready
-
-        updateMediaSessionMetadata();
+        haptic.impact('medium');
     }
 
     const playNextTrack = () => playTrack(currentTrackIndex + 1);
     const playPrevTrack = () => playTrack(currentTrackIndex - 1);
 
-    // === SCREEN & DRAWER NAVIGATION ===
-    const openGenresScreen = () => { screenPlayer.classList.add('slide-left'); screenGenres.classList.add('active'); tg.HapticFeedback.impactOccurred('light'); };
-    const closeGenresScreen = () => { screenPlayer.classList.remove('slide-left'); screenGenres.classList.remove('active'); };
-    const openDrawer = (drawer) => { drawer.classList.add('active'); overlay.classList.add('active'); };
-    const closeDrawers = () => { subgenreDrawer.classList.remove('active'); playlistDrawer.classList.remove('active'); overlay.classList.remove('active'); };
-    window.togglePlaylist = () => playlistDrawer.classList.contains('active') ? closeDrawers() : openDrawer(playlistDrawer);
-    btnGenres.onclick = openGenresScreen;
-    btnBackPlayer.onclick = closeGenresScreen;
-    btnPlaylist.onclick = window.togglePlaylist;
-    overlay.onclick = closeDrawers;
-    genreSearch.oninput = (e) => {
-        const query = e.target.value.toLowerCase();
-        document.querySelectorAll('.genre-card').forEach(card => {
-            card.querySelector('.genre-name').textContent.toLowerCase().includes(query)
-                ? card.style.display = 'flex'
-                : card.style.display = 'none';
-        });
-    };
-
-    // === VISUALIZER ===
-    function setupCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        ctx.scale(dpr, dpr);
-    }
+    // === AUDIO CONTEXT & VISUALIZER ===
     function initAudio() {
         if (isInitialized) return;
         try {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
-            const src = audioCtx.createMediaElementSource(audio);
-            src.connect(analyser);
-            analyser.connect(audioCtx.destination);
             analyser.fftSize = 256;
-            analyser.smoothingTimeConstant = 0.75;
+            const source = audioCtx.createMediaElementSource(audio);
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
             dataArray = new Uint8Array(analyser.frequencyBinCount);
             isInitialized = true;
-            animate();
-        } catch (e) { console.warn("Audio init failed:", e); }
-    }
-    function animate() {
-        requestAnimationFrame(animate);
-        const w = canvas.getBoundingClientRect().width;
-        const h = canvas.getBoundingClientRect().height;
-        const cx = w / 2;
-        const cy = h / 2;
-        ctx.clearRect(0, 0, w, h);
-        let avgEnergy = 0;
-        if (analyser && dataArray) {
-            analyser.getByteFrequencyData(dataArray);
-            for (let i = 0; i < dataArray.length; i++) { avgEnergy += dataArray[i]; }
-            avgEnergy = avgEnergy / dataArray.length / 255;
+            if (canvas) drawVisualizer();
+        } catch (e) {
+            console.error('Audio context initialization failed:', e);
         }
-        const time = Date.now() / 1000;
-        const sunRadius = 35 + avgEnergy * 5;
-        const glowSize = sunRadius + 40 + avgEnergy * 20;
-        const outerGlow = ctx.createRadialGradient(cx, cy, sunRadius, cx, cy, glowSize);
-        outerGlow.addColorStop(0, `rgba(255, 149, 0, ${0.4 + avgEnergy * 0.3})`);
-        outerGlow.addColorStop(0.4, `rgba(255, 80, 50, ${0.2 + avgEnergy * 0.2})`);
-        outerGlow.addColorStop(1, 'rgba(255, 50, 50, 0)');
-        ctx.beginPath();
-        ctx.arc(cx, cy, glowSize, 0, Math.PI * 2);
-        ctx.fillStyle = outerGlow;
-        ctx.fill();
-        // Sun core
-        const coreGradient = ctx.createRadialGradient(cx - sunRadius * 0.2, cy - sunRadius * 0.2, 0, cx, cy, sunRadius);
-        coreGradient.addColorStop(0, '#FFFAE6');
-        coreGradient.addColorStop(0.3, '#FFE066');
-        coreGradient.addColorStop(0.7, '#FFAA33');
-        coreGradient.addColorStop(1, '#FF8822');
-        ctx.beginPath();
-        ctx.arc(cx, cy, sunRadius, 0, Math.PI * 2);
-        ctx.fillStyle = coreGradient;
-        ctx.shadowColor = '#FF9500';
-        ctx.shadowBlur = 20;
-        ctx.fill();
-        ctx.shadowBlur = 0;
     }
 
-    // === PLAYER CONTROLS & EVENTS ===
-    playBtn.onclick = () => {
-        initAudio();
-        if (audioCtx?.state === 'suspended') audioCtx.resume();
-        if (audio.paused) {
-            audio.play().catch(e => console.error("Play click failed:", e));
-        } else {
-            audio.pause();
+    function drawVisualizer() {
+        if (!canvas || !ctx || !analyser) return;
+        requestAnimationFrame(drawVisualizer);
+        analyser.getByteFrequencyData(dataArray);
+        
+        const barCount = 32;
+        const barWidth = canvas.width / barCount;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        for (let i = 0; i < barCount; i++) {
+            const value = dataArray[i * 4] || 0;
+            const barHeight = (value / 255) * canvas.height * 0.8;
+            const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
+            gradient.addColorStop(0, '#00f2ff');
+            gradient.addColorStop(1, '#ff00ea');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth - 2, barHeight);
         }
-        tg.HapticFeedback.impactOccurred('light');
-    };
-    nextBtn.onclick = () => { playNextTrack(); tg.HapticFeedback.impactOccurred('medium'); };
-    prevBtn.onclick = () => {
-        if (audio.currentTime > 3) { audio.currentTime = 0; } 
-        else { playPrevTrack(); }
-        tg.HapticFeedback.impactOccurred('medium');
-    };
-    rewindBtn.onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); updateMediaSessionPosition(); };
-    forwardBtn.onclick = () => { if (audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + 10); updateMediaSessionPosition(); };
-    playbackSpeed.onchange = () => { audio.playbackRate = parseFloat(playbackSpeed.value); updateMediaSessionPosition(); };
+    }
 
-    audio.onplay = () => { playIcon.textContent = 'pause'; if (audioCtx?.state === 'suspended') audioCtx.resume(); updateMediaSessionMetadata(); };
-    audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
-    audio.onended = () => playNextTrack();
-    audio.onloadedmetadata = () => { durTimeEl.textContent = formatTime(audio.duration); updateMediaSessionPosition(); };
-    audio.ontimeupdate = () => {
-        if (isSeeking) return;
-        if (audio.duration && isFinite(audio.duration)) {
-            const percent = (audio.currentTime / audio.duration);
-            progressEl.style.width = `${percent * 100}%`;
-            progressHandle.style.left = `${percent * 100}%`;
+    // === MEDIA SESSION ===
+    function updateMediaSessionMetadata() {
+        if ('mediaSession' in navigator && currentTrackIndex >= 0) {
+            const track = playerPlaylist[currentTrackIndex];
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: track.title || 'Unknown',
+                artist: track.artist || 'Unknown',
+                album: currentGenre || 'Music',
+            });
+            
+            navigator.mediaSession.setActionHandler('play', () => safePlay());
+            navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+            navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
+            navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
+        }
+    }
+
+    // === AUDIO EVENT LISTENERS ===
+    audio.addEventListener('play', () => { playIcon.textContent = 'pause'; });
+    audio.addEventListener('pause', () => { playIcon.textContent = 'play_arrow'; });
+    audio.addEventListener('ended', playNextTrack);
+    
+    audio.addEventListener('timeupdate', () => {
+        if (!isSeeking && audio.duration) {
+            const progress = (audio.currentTime / audio.duration) * 100;
+            progressEl.style.width = progress + '%';
+            progressHandle.style.left = progress + '%';
             currTimeEl.textContent = formatTime(audio.currentTime);
         }
-    };
-    audio.onprogress = () => {
-        if (audio.buffered.length > 0 && audio.duration) {
-            const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
-            progressBuffered.style.width = `${(bufferedEnd / audio.duration) * 100}%`;
-        }
-    };
+    });
 
-    function formatTime(s) {
-        if (!s || !isFinite(s)) return '0:00';
-        const m = Math.floor(s / 60);
-        const sec = Math.floor(s % 60);
-        return `${m}:${sec < 10 ? '0' + sec : sec}`;
+    audio.addEventListener('durationchange', () => {
+        if (audio.duration && isFinite(audio.duration)) {
+            durTimeEl.textContent = formatTime(audio.duration);
+        }
+    });
+
+    audio.addEventListener('progress', () => {
+        if (audio.buffered.length > 0 && audio.duration) {
+            const buffered = audio.buffered.end(audio.buffered.length - 1);
+            progressBuffered.style.width = ((buffered / audio.duration) * 100) + '%';
+        }
+    });
+
+    // === UI HELPERS ===
+    function formatTime(seconds) {
+        if (!isFinite(seconds)) return '0:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-    // === INITIALIZATION ===
-    initGenresUI();
-    setupSeekBar();
-    setupMediaSession();
-    setupBackgroundPlayback();
-    animate();
+    function closeDrawers() {
+        subgenreDrawer?.classList.remove('active');
+        playlistDrawer?.classList.remove('active');
+        overlay?.classList.remove('active');
+    }
+
+    function openGenresScreen() {
+        screenGenres?.classList.add('active');
+        screenPlayer?.classList.remove('active');
+    }
+
+    function closeGenresScreen() {
+        screenGenres?.classList.remove('active');
+        screenPlayer?.classList.add('active');
+    }
+
+    // === EVENT LISTENERS ===
+    playBtn?.addEventListener('click', () => {
+        if (isLoading || !audio.src) return;
+        initAudio();
+        if (audioCtx?.state === 'suspended') audioCtx.resume();
+        audio.paused ? safePlay() : audio.pause();
+        haptic.impact('light');
+    });
+
+    nextBtn?.addEventListener('click', () => {
+        if (!isLoading) {
+            playNextTrack();
+            haptic.impact('medium');
+        }
+    });
+
+    prevBtn?.addEventListener('click', () => {
+        if (isLoading) return;
+        if (audio.currentTime > 3) {
+            audio.currentTime = 0;
+        } else {
+            playPrevTrack();
+        }
+        haptic.impact('medium');
+    });
+
+    rewindBtn?.addEventListener('click', () => {
+        audio.currentTime = Math.max(0, audio.currentTime - 10);
+        haptic.impact('light');
+    });
+
+    forwardBtn?.addEventListener('click', () => {
+        audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
+        haptic.impact('light');
+    });
+
+    playbackSpeed?.addEventListener('click', () => {
+        const speeds = [1, 1.25, 1.5, 1.75, 2];
+        const currentIndex = speeds.indexOf(audio.playbackRate);
+        const nextIndex = (currentIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[nextIndex];
+        playbackSpeed.textContent = speeds[nextIndex] + 'x';
+        haptic.selection();
+    });
+
+    // Progress bar seeking
+    progressContainer?.addEventListener('click', (e) => {
+        if (!audio.duration) return;
+        const rect = progressContainer.getBoundingClientRect();
+        const percent = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = percent * audio.duration;
+        haptic.impact('light');
+    });
+
+    let isDragging = false;
+    progressHandle?.addEventListener('touchstart', () => { isDragging = true; isSeeking = true; });
+    progressHandle?.addEventListener('mousedown', () => { isDragging = true; isSeeking = true; });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!isDragging || !audio.duration) return;
+        const rect = progressContainer.getBoundingClientRect();
+        const touch = e.touches[0];
+        const percent = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+        audio.currentTime = percent * audio.duration;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging || !audio.duration) return;
+        const rect = progressContainer.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        audio.currentTime = percent * audio.duration;
+    });
+
+    document.addEventListener('touchend', () => { isDragging = false; isSeeking = false; });
+    document.addEventListener('mouseup', () => { isDragging = false; isSeeking = false; });
+
+    // Navigation
+    btnGenres?.addEventListener('click', () => {
+        openGenresScreen();
+        haptic.impact('medium');
+    });
+
+    btnBackPlayer?.addEventListener('click', () => {
+        closeGenresScreen();
+        haptic.impact('medium');
+    });
+
+    btnPlaylist?.addEventListener('click', () => {
+        if (!playlistDrawer || !overlay) return;
+        playlistDrawer.classList.add('active');
+        overlay.classList.add('active');
+        renderPlaylist();
+        haptic.impact('medium');
+    });
+
+    overlay?.addEventListener('click', closeDrawers);
+
+    // === UI INITIALIZATION ===
+    function createChips(container, items) {
+        if (!container) return;
+        container.innerHTML = '';
+        items.forEach(item => {
+            const chip = document.createElement('button');
+            chip.className = 'chip';
+            chip.textContent = item.name;
+            chip.onclick = () => {
+                selectGenre(item.name, item.search);
+                haptic.selection();
+            };
+            container.appendChild(chip);
+        });
+    }
+
+    function renderGenres() {
+        if (!genreGrid) return;
+        genreGrid.innerHTML = '';
+        Object.entries(GENRES).forEach(([key, genre]) => {
+            const card = document.createElement('button');
+            card.className = 'genre-card';
+            card.style.setProperty('--genre-color', genre.color);
+            card.innerHTML = `
+                <div class="genre-icon">${genre.icon}</div>
+                <div class="genre-name">${genre.name}</div>
+            `;
+            card.onclick = () => {
+                if (!subgenreDrawer || !overlay || !drawerTitle || !drawerIcon || !subgenreList) return;
+                drawerTitle.textContent = genre.name;
+                drawerIcon.textContent = genre.icon;
+                subgenreList.innerHTML = '';
+                Object.entries(genre.subgenres).forEach(([subKey, sub]) => {
+                    const item = document.createElement('button');
+                    item.className = 'subgenre-item';
+                    item.innerHTML = `
+                        <div>
+                            <div class="subgenre-name">${sub.name}</div>
+                            <div class="subgenre-styles">${sub.styles}</div>
+                        </div>
+                        <span class="material-icons">arrow_forward</span>
+                    `;
+                    item.onclick = () => selectGenre(sub.name, sub.search);
+                    subgenreList.appendChild(item);
+                });
+                subgenreDrawer.classList.add('active');
+                overlay.classList.add('active');
+                haptic.impact('medium');
+            };
+            genreGrid.appendChild(card);
+        });
+    }
+
+    function renderPlaylist() {
+        const playlistContent = document.getElementById('playlist-content');
+        if (!playlistContent) return;
+        playlistContent.innerHTML = '';
+        
+        if (playerPlaylist.length === 0) {
+            playlistContent.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">No playlist loaded</div>';
+            return;
+        }
+
+        playerPlaylist.forEach((track, index) => {
+            const item = document.createElement('button');
+            item.className = 'playlist-item' + (index === currentTrackIndex ? ' active' : '');
+            item.innerHTML = `
+                <span class="material-icons">${index === currentTrackIndex ? 'play_circle' : 'music_note'}</span>
+                <div class="playlist-track-info">
+                    <div class="playlist-track-title">${track.title || 'Unknown'}</div>
+                    <div class="playlist-track-artist">${track.artist || 'Unknown'}</div>
+                </div>
+            `;
+            item.onclick = () => {
+                playTrack(index);
+                closeDrawers();
+                haptic.impact('medium');
+            };
+            playlistContent.appendChild(item);
+        });
+    }
+
+    // Genre search
+    genreSearch?.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        if (!genreGrid) return;
+        const cards = genreGrid.querySelectorAll('.genre-card');
+        cards.forEach(card => {
+            const name = card.querySelector('.genre-name')?.textContent.toLowerCase() || '';
+            card.style.display = name.includes(query) ? 'flex' : 'none';
+        });
+    });
+
+    // Initialize UI
+    createChips(trendingChips, TRENDING);
+    createChips(decadeChips, DECADES);
+    createChips(moodChips, MOODS);
+    renderGenres();
+
+    // Show genres screen initially if no playlist
+    if (playerPlaylist.length === 0) {
+        openGenresScreen();
+    }
+
+    console.log('Music Player initialized', { 
+        hapticSupported: haptic.isSupported,
+        telegramVersion: tg.version 
+    });
 });
