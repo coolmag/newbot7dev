@@ -162,8 +162,7 @@ class RadioManager:
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    interval, duration = 90.0, float(track_info.duration)
-                    wait_time = max(duration, interval) if duration > 0 else interval
+                    wait_time = 90.0
                     
                     await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                 except asyncio.TimeoutError:
