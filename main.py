@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -106,6 +106,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/webapp")
 
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
