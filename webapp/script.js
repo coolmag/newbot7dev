@@ -158,9 +158,13 @@ document.addEventListener('DOMContentLoaded', () => {
         audio.removeEventListener('error', handleError);
         audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
 
-        audio.src = `/audio/${track.identifier}`;
+        // Use URL from backend if available, otherwise construct it
+        const audioUrl = track.url || `/audio/${track.identifier}`;
+        console.log('Loading track:', track.title, 'URL:', audioUrl);
+        audio.src = audioUrl;
 
         function handleCanPlay() {
+            console.log('Track ready to play:', track.title);
             clearAudioTimeouts();
             safePlay().finally(() => {
                 isLoading = false;
@@ -169,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function handleError(e) {
-            console.error("Error loading track:", track.title, e);
+            console.error("Error loading track:", track.title, "URL:", audioUrl, "Error:", e);
             clearAudioTimeouts();
             isLoading = false;
             titleEl.textContent = "Track unavailable";
@@ -214,7 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`/api/player/playlist?query=${encodeURIComponent(searchQuery)}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
+            console.log('Playlist API response:', data);
             playerPlaylist = data.playlist || [];
+            console.log('First track:', playerPlaylist[0]);
             if (playerPlaylist.length > 0) {
                 playTrack(0);
             } else {
@@ -376,12 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
         haptic.impact('light');
     });
 
-    playbackSpeed?.addEventListener('click', () => {
-        const speeds = [1, 1.25, 1.5, 1.75, 2];
-        const currentIndex = speeds.indexOf(audio.playbackRate);
-        const nextIndex = (currentIndex + 1) % speeds.length;
-        audio.playbackRate = speeds[nextIndex];
-        playbackSpeed.textContent = speeds[nextIndex] + 'x';
+    playbackSpeed?.addEventListener('change', (e) => {
+        audio.playbackRate = parseFloat(e.target.value);
         haptic.selection();
     });
 
