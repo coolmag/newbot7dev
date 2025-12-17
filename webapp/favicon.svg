@@ -25,21 +25,3 @@
   <!-- Highlight -->
   <circle cx="42" cy="42" r="8" fill="rgba(255,255,255,0.4)"/>
 </svg>
-Также добавь favicon в HTML
-В index.html в секцию <head> добавь:
-
-HTML
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solar Player v3.0</title>
-    
-    <!-- ДОБАВЬ ЭТИ СТРОКИ -->
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="apple-touch-icon" href="favicon.svg">
-    
-    <link rel="stylesheet" href="style.css?v=3.0">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-</head>

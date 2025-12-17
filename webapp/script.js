@@ -26,6 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const audio = document.getElementById('audio-player');
     const playBtn = document.getElementById('btn-play-pause');
     const playIcon = document.getElementById('icon-play');
+    const vinylRecord = document.getElementById('vinyl-record');
+    const tonearm = document.getElementById('tonearm');
+    const sunRays = document.getElementById('sun-rays');
+    const vinylGlow = document.getElementById('vinyl-glow');
     const nextBtn = document.getElementById('btn-next');
     const prevBtn = document.getElementById('btn-prev');
     const rewindBtn = document.getElementById('btn-rewind');
@@ -218,9 +222,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`/api/player/playlist?query=${encodeURIComponent(searchQuery)}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            console.log('Playlist API response:', data);
+            console.log('Playlist API response:', data); // DEBUG
             playerPlaylist = data.playlist || [];
-            console.log('First track:', playerPlaylist[0]);
+            console.log('First track:', playerPlaylist[0]); // DEBUG
             if (playerPlaylist.length > 0) {
                 playTrack(0);
             } else {
@@ -246,36 +250,46 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
+            analyser.fftSize = 128;
             const source = audioCtx.createMediaElementSource(audio);
             source.connect(analyser);
             analyser.connect(audioCtx.destination);
             dataArray = new Uint8Array(analyser.frequencyBinCount);
             isInitialized = true;
-            if (canvas) drawVisualizer();
+            drawSunRays();
         } catch (e) {
             console.error('Audio context initialization failed:', e);
         }
     }
 
-    function drawVisualizer() {
-        if (!canvas || !ctx || !analyser) return;
-        requestAnimationFrame(drawVisualizer);
+    // Generate sun rays
+    function generateSunRays() {
+        if (!sunRays) return;
+        sunRays.innerHTML = '';
+        const rayCount = 16;
+        for (let i = 0; i < rayCount; i++) {
+            const ray = document.createElement('div');
+            ray.className = 'sun-ray';
+            ray.style.transform = `rotate(${i * (360 / rayCount)}deg)`;
+            ray.dataset.index = i;
+            sunRays.appendChild(ray);
+        }
+    }
+
+    // Animate sun rays based on audio
+    function drawSunRays() {
+        if (!analyser || !sunRays) return;
+        requestAnimationFrame(drawSunRays);
         analyser.getByteFrequencyData(dataArray);
         
-        const barCount = 32;
-        const barWidth = canvas.width / barCount;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        for (let i = 0; i < barCount; i++) {
-            const value = dataArray[i * 4] || 0;
-            const barHeight = (value / 255) * canvas.height * 0.8;
-            const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-            gradient.addColorStop(0, '#00f2ff');
-            gradient.addColorStop(1, '#ff00ea');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth - 2, barHeight);
-        }
+        const rays = sunRays.querySelectorAll('.sun-ray');
+        rays.forEach((ray, i) => {
+            const dataIndex = Math.floor((i / rays.length) * dataArray.length);
+            const value = dataArray[dataIndex] || 0;
+            const height = 80 + (value / 255) * 60; // 80-140px
+            ray.style.height = height + 'px';
+            ray.style.opacity = 0.4 + (value / 255) * 0.6;
+        });
     }
 
     // === MEDIA SESSION ===
@@ -296,8 +310,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // === AUDIO EVENT LISTENERS ===
-    audio.addEventListener('play', () => { playIcon.textContent = 'pause'; });
-    audio.addEventListener('pause', () => { playIcon.textContent = 'play_arrow'; });
+    audio.addEventListener('play', () => { 
+        playIcon.textContent = 'pause';
+        vinylRecord?.classList.add('playing');
+        tonearm?.classList.add('playing');
+        sunRays?.classList.add('playing');
+        vinylGlow?.classList.add('active');
+    });
+    
+    audio.addEventListener('pause', () => { 
+        playIcon.textContent = 'play_arrow';
+        vinylRecord?.classList.remove('playing');
+        tonearm?.classList.remove('playing');
+        sunRays?.classList.remove('playing');
+        vinylGlow?.classList.remove('active');
+    });
+    
     audio.addEventListener('ended', playNextTrack);
     
     audio.addEventListener('timeupdate', () => {
@@ -382,8 +410,12 @@ document.addEventListener('DOMContentLoaded', () => {
         haptic.impact('light');
     });
 
-    playbackSpeed?.addEventListener('change', (e) => {
-        audio.playbackRate = parseFloat(e.target.value);
+    playbackSpeed?.addEventListener('click', () => {
+        const speeds = [1, 1.25, 1.5, 1.75, 2];
+        const currentIndex = speeds.indexOf(audio.playbackRate);
+        const nextIndex = (currentIndex + 1) % speeds.length;
+        audio.playbackRate = speeds[nextIndex];
+        playbackSpeed.textContent = speeds[nextIndex] + 'x';
         haptic.selection();
     });
 
@@ -533,6 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initialize UI
+    generateSunRays();
     createChips(trendingChips, TRENDING);
     createChips(decadeChips, DECADES);
     createChips(moodChips, MOODS);
