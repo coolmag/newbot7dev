@@ -16,7 +16,7 @@ from config import get_settings, Settings
 from logging_setup import setup_logging
 from cache import CacheService
 from youtube import YouTubeDownloader
-from models import Source
+from models import Source, TrackInfo
 from radio import RadioManager
 from handlers import setup_handlers
 
