@@ -253,18 +253,42 @@ document.addEventListener('DOMContentLoaded', () => {
             titleEl.textContent = "Playlist finished";
             artistEl.textContent = "Select a new genre";
             currentTrackIndex = -1;
+            // Clear current audio source to prevent playing phantom audio
+            audio.src = ""; 
+            audio.load();
             return;
         }
+
         currentTrackIndex = index;
         const track = playerPlaylist[index];
+
         titleEl.textContent = track.title || 'Unknown';
         artistEl.textContent = track.artist || 'Unknown';
+        
+        // Stop current playback and unload media before setting new source
+        audio.pause();
+        audio.src = ""; // Unload the current media
+        audio.load(); // Apply the empty src
+        
+        // Set the new source
         audio.src = `/audio/${track.identifier}`;
-        initAudio();
-        audio.play().catch(e => {
-            console.error("Play failed:", e);
-            playIcon.textContent = 'play_arrow';
-        });
+        
+        // Use an event listener to play only when ready
+        const canPlayHandler = () => {
+            audio.play().catch(e => {
+                console.error("Play failed:", e);
+                playIcon.textContent = 'play_arrow';
+            });
+            audio.removeEventListener('canplay', canPlayHandler); // Clean up listener
+        };
+        audio.addEventListener('canplay', canPlayHandler);
+
+        initAudio(); // Ensure audio context is ready
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        
+        playIcon.textContent = 'pause'; // Assume it will play if ready
+
+        updateMediaSessionMetadata();
     }
 
     const playNextTrack = () => playTrack(currentTrackIndex + 1);
