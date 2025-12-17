@@ -3,7 +3,7 @@ import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -150,13 +150,25 @@ async def start_radio_from_webapp(req: RadioStartRequest, user: WebAppUser = Dep
     await radio.start(chat_id=req.chat_id, query=req.query, chat_type="WebApp")
     return {"ok": True}
 
+async def download_playlist_in_background(downloader: YouTubeDownloader, tracks: list[TrackInfo]):
+    logger.info(f"Запуск фоновой загрузки для {len(tracks)} треков.")
+    for track in tracks:
+        try:
+            # Мы не ждем окончания каждой загрузки, а просто запускаем их
+            asyncio.create_task(downloader.download(track.identifier))
+        except Exception as e:
+            logger.error(f"Ошибка при запуске задачи фоновой загрузки для {track.identifier}: {e}")
+
 @app.get("/api/player/playlist")
-async def get_player_playlist(query: str):
-    downloader = app.state.downloader
+async def get_player_playlist(query: str, background_tasks: BackgroundTasks):
+    downloader: YouTubeDownloader = app.state.downloader
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is required.")
     
-    tracks = await downloader.search(query, limit=30)
+    tracks = await downloader.search(query, limit=15) # Уменьшим лимит для ускорения
+    
+    # Запускаем загрузку в фоне
+    background_tasks.add_task(download_playlist_in_background, downloader, tracks)
     
     # Преобразуем TrackInfo объекты в словари для JSON
     playlist = []
@@ -166,7 +178,7 @@ async def get_player_playlist(query: str):
             "artist": track.artist,
             "duration": track.duration,
             "identifier": track.identifier,
-            "url": f"/audio/{track.identifier}",  # Добавляем URL
+            "url": f"/audio/{track.identifier}",
             "view_count": track.view_count,
             "like_count": track.like_count
         })
@@ -190,25 +202,20 @@ async def webhook(req: Request):
 
 @app.get("/audio/{track_id}")
 async def get_audio(track_id: str):
-    cache = app.state.cache
-    downloader = app.state.downloader
+    cache: CacheService = app.state.cache
     
-    # 1. Check cache for file path
-    cached = await cache.get(f"yt:{track_id}", Source.YOUTUBE)
-    if cached and Path(cached.file_path).exists():
+    # 1. Проверяем кэш на наличие пути к файлу
+    cached_result = await cache.get(f"yt:{track_id}", Source.YOUTUBE)
+    
+    # 2. Проверяем, существует ли сам файл по этому пути
+    if cached_result and cached_result.file_path and Path(cached_result.file_path).exists():
         return FileResponse(
-            cached.file_path,
-            media_type=audio_mime_for(Path(cached.file_path)),
+            cached_result.file_path,
+            media_type=audio_mime_for(Path(cached_result.file_path)),
             headers={"Access-Control-Allow-Origin": "*"}
         )
 
-    # 2. If not in cache, download it on-demand
-    result = await downloader.download(track_id)
-    if result.success and result.file_path and Path(result.file_path).exists():
-        return FileResponse(
-            result.file_path,
-            media_type=audio_mime_for(Path(result.file_path)),
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
-
-    raise HTTPException(status_code=404, detail="Track not found or failed to download.")
+    # 3. Если в кэше нет или файл был удален, возвращаем 404
+    # Это заставит фронтенд пропустить трек и попробовать следующий
+    logger.warning(f"Аудиофайл для track_id '{track_id}' не найден в кэше. Пропускаем.")
+    raise HTTPException(status_code=404, detail="Track not cached or ready yet. Please try again.")
