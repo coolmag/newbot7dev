@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Solar Player v3.0</title>
+    <link rel="stylesheet" href="style.css?v=3.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+    <!-- Animated Background Particles -->
+    <div class="ambient-container">
+        <div class="ambient-orb orb-1"></div>
+        <div class="ambient-orb orb-2"></div>
+        <div class="ambient-orb orb-3"></div>
+    </div>
+
+    <div class="player-ui">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <span class="material-icons-round top-btn" onclick="window.close()">keyboard_arrow_down</span>
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                <span>LIVE RADIO</span>
+            </div>
+            <span class="material-icons-round top-btn" id="btn-playlist">queue_music</span>
+        </div>
+
+        <!-- Solar Visualizer -->
+        <div class="cover-container">
+            <canvas id="visualizer"></canvas>
+            <div class="sun-core">
+                <div class="sun-inner">
+                    <span class="sun-icon">☀️</span>
+                </div>
+                <div class="pulse-ring ring-1"></div>
+                <div class="pulse-ring ring-2"></div>
+                <div class="pulse-ring ring-3"></div>
+            </div>
+        </div>
+
+        <!-- Track Info -->
+        <div class="info-section">
+            <div class="track-meta">
+                <div class="title" id="track-title">Loading...</div>
+                <div class="artist" id="track-artist">Connecting to satellite...</div>
+            </div>
+
+            <!-- Waveform Progress -->
+            <div class="progress-wrapper">
+                <div class="progress-container">
+                    <div class="progress-glow"></div>
+                    <div class="progress-fill" id="progress-bar"></div>
+                </div>
+            </div>
+            
+            <div class="timers">
+                <span id="curr-time">0:00</span>
+                <span class="duration-label">— ∞ —</span>
+                <span id="dur-time">LIVE</span>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls">
+                <div class="btn btn-secondary" id="btn-prev">
+                    <span class="material-icons-round">skip_previous</span>
+                </div>
+                <div class="btn btn-play" id="btn-play-pause">
+                    <span class="material-icons-round" id="icon-play">play_arrow</span>
+                    <div class="btn-play-ring"></div>
+                </div>
+                <div class="btn btn-secondary" id="btn-next">
+                    <span class="material-icons-round">skip_next</span>
+                </div>
+            </div>
+
+            <!-- Extra Controls -->
+            <div class="extra-controls">
+                <div class="mini-btn" id="btn-shuffle">
+                    <span class="material-icons-round">shuffle</span>
+                </div>
+                <div class="mini-btn" id="btn-heart">
+                    <span class="material-icons-round">favorite_border</span>
+                </div>
+                <div class="mini-btn" id="btn-repeat">
+                    <span class="material-icons-round">repeat</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Playlist Drawer -->
+    <div class="playlist-drawer" id="playlist-drawer">
+        <div class="drag-handle" onclick="togglePlaylist()"></div>
+        <div class="playlist-header">
+            <span class="material-icons-round">queue_music</span>
+            <span>UP NEXT</span>
+        </div>
+        <div id="playlist-content" class="playlist-content">
+            <div class="playlist-item active">
+                <div class="item-art">🌞</div>
+                <div class="item-info">
+                    <div class="item-title">Currently Playing</div>
+                    <div class="item-artist">Solar Beats</div>
+                </div>
+                <span class="material-icons-round item-playing">equalizer</span>
+            </div>
+            <div class="playlist-item">
+                <div class="item-art">🎵</div>
+                <div class="item-info">
+                    <div class="item-title">Next Track</div>
+                    <div class="item-artist">Coming up...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <audio id="audio-player" crossorigin="anonymous"></audio>
+    <script src="script.js?v=3.0"></script>
+</body>
+</html>
