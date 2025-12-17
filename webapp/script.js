@@ -48,10 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // === STATE ===
     let audioCtx, analyser, dataArray;
     let isInitialized = false;
-    let currentId = null;
-    let isProcessing = false;
     let currentGenre = null;
     let isSeeking = false;
+    let playerPlaylist = [];
+    let currentTrackIndex = -1;
 
     const urlParams = new URLSearchParams(window.location.search);
     const chatId = urlParams.get('chat_id');
@@ -79,11 +79,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             navigator.mediaSession.setActionHandler('previoustrack', () => {
-                audio.currentTime = 0;
+                if (audio.currentTime > 3) {
+                    audio.currentTime = 0;
+                } else {
+                    playPrevTrack();
+                }
             });
 
             navigator.mediaSession.setActionHandler('nexttrack', () => {
-                api('skip');
+                playNextTrack();
             });
 
             navigator.mediaSession.setActionHandler('seekbackward', (details) => {
@@ -446,25 +450,27 @@ document.addEventListener('DOMContentLoaded', () => {
     async function selectGenre(name, searchQuery) {
         currentGenre = name;
         currentGenreEl.textContent = name.toUpperCase();
-        titleEl.textContent = "Loading...";
-        artistEl.textContent = "Starting radio...";
-
+        titleEl.textContent = "Loading playlist...";
+        artistEl.textContent = "Please wait...";
         closeGenresScreen();
         closeDrawers();
 
-        if (chatId) {
-            try {
-                await fetch(`/api/radio/start`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        query: searchQuery
-                    })
-                });
-            } catch (e) {
-                console.error('Failed to start radio:', e);
+        try {
+            const response = await fetch(`/api/player/playlist?query=${encodeURIComponent(searchQuery)}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+
+            playerPlaylist = data.playlist || [];
+            if (playerPlaylist.length > 0) {
+                playTrack(0);
+            } else {
+                titleEl.textContent = "No tracks found";
+                artistEl.textContent = "Try another genre";
             }
+        } catch (e) {
+            console.error('Failed to fetch playlist:', e);
+            titleEl.textContent = "Error loading playlist";
+            artistEl.textContent = "Please try again";
         }
 
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
@@ -681,14 +687,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     nextBtn.onclick = () => {
-        api('skip');
-        titleEl.textContent = "Loading...";
-        artistEl.textContent = "Next track";
+        playNextTrack();
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
     };
 
     prevBtn.onclick = () => {
-        audio.currentTime = 0;
+        if (audio.currentTime > 3) {
+            audio.currentTime = 0;
+        } else {
+            playPrevTrack();
+        }
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
     };
 
@@ -715,50 +723,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     };
 
-    // === API ===
-    async function api(action) {
-        if (!chatId || isProcessing) return;
-        isProcessing = true;
-        try {
-            await fetch(`/api/radio/${action}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId })
-            });
-        } catch (e) {}
-        setTimeout(() => isProcessing = false, 1000);
-    }
-
-    // === SYNC ===
-    async function sync() {
-        if (!chatId) return;
-        try {
-            const res = await fetch(`/api/radio/status?chat_id=${chatId}`);
-            const data = await res.json();
-            const s = data.sessions[chatId];
-
-            if (s && s.current) {
-                if (currentId !== s.current.identifier) {
-                    titleEl.textContent = s.current.title || 'Unknown';
-                    artistEl.textContent = s.current.artist || 'Unknown';
-                    updateMediaSessionMetadata();
-                }
-
-                if (s.current.audio_url && currentId !== s.current.identifier) {
-                    currentId = s.current.identifier;
-                    audio.crossOrigin = "anonymous";
-                    audio.src = s.current.audio_url;
-                    if (isInitialized) {
-                        audio.play().catch(() => {});
-                        playIcon.textContent = 'pause';
-                    }
-                }
+        // === PLAYBACK LOGIC ===
+        function playTrack(index) {
+            if (index < 0 || index >= playerPlaylist.length) {
+                playIcon.textContent = 'play_arrow';
+                titleEl.textContent = "Playlist finished";
+                artistEl.textContent = "Select a new genre";
+                return;
             }
-        } catch (e) {}
-    }
-
-    // === PROGRESS ===
-    audio.ontimeupdate = () => {
+    
+            currentTrackIndex = index;
+            const track = playerPlaylist[index];
+    
+            titleEl.textContent = track.title || 'Unknown';
+            artistEl.textContent = track.artist || 'Unknown';
+            
+            audio.crossOrigin = "anonymous";
+            audio.src = `/audio/${track.identifier}`;
+            
+            initAudio(); // Ensure audio context is ready
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            audio.play().catch(e => console.error("Play failed:", e));
+            playIcon.textContent = 'pause';
+    
+            updateMediaSessionMetadata();
+        }
+    
+        function playNextTrack() {
+            playTrack(currentTrackIndex + 1);
+        }
+    
+        function playPrevTrack() {
+            playTrack(currentTrackIndex - 1);
+        }
+    
+        // === PLAYER CONTROLS ===    audio.ontimeupdate = () => {
         if (isSeeking) return;
         if (audio.duration && isFinite(audio.duration)) {
             const percent = (audio.currentTime / audio.duration) * 100;
@@ -778,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    audio.onended = () => api('skip');
+    audio.onended = () => playNextTrack();
     
     audio.onplay = () => {
         playIcon.textContent = 'pause';
@@ -806,7 +807,4 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSeekBar();
     setupMediaSession();
     setupBackgroundPlayback();
-    
-    setInterval(sync, 2000);
-    sync();
 });
