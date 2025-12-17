@@ -1,5 +1,5 @@
 # 1. Базовый образ
-FROM python:3.10
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
