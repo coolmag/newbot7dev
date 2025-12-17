@@ -153,7 +153,21 @@ async def get_player_playlist(query: str):
         raise HTTPException(status_code=400, detail="Query parameter is required.")
     
     tracks = await downloader.search(query, limit=30)
-    return {"playlist": tracks}
+    
+    # Преобразуем TrackInfo объекты в словари для JSON
+    playlist = []
+    for track in tracks:
+        playlist.append({
+            "title": track.title,
+            "artist": track.artist,
+            "duration": track.duration,
+            "identifier": track.identifier,
+            "url": f"/audio/{track.identifier}",  # Добавляем URL
+            "view_count": track.view_count,
+            "like_count": track.like_count
+        })
+    
+    return {"playlist": playlist}
 
 @app.post("/telegram")
 async def webhook(req: Request):
