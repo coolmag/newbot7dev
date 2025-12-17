@@ -404,11 +404,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     rewindBtn?.addEventListener('click', () => {
+        if (!isFinite(audio.duration)) return;
         audio.currentTime = Math.max(0, audio.currentTime - 10);
         haptic.impact('light');
     });
 
     forwardBtn?.addEventListener('click', () => {
+        if (!isFinite(audio.duration)) return;
         audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
         haptic.impact('light');
     });
