@@ -1,46 +1,66 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Music Player</title>
+    <title>Cyber Player</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,400,1,0" rel="stylesheet" />
 </head>
 <body>
-    <div class="background-glow"></div>
-    <div class="player-container">
-        <div class="header">
-            <span class="material-symbols-rounded" onclick="window.Telegram.WebApp.close()">expand_more</span>
-            <span>NOW PLAYING</span>
-            <span class="material-symbols-rounded">queue_music</span>
+
+    <div class="ambient-light"></div>
+
+    <div class="player-ui">
+        <!-- Top Bar -->
+        <div style="display: flex; justify-content: space-between; color: #666;">
+            <span class="material-icons-round" onclick="window.close()">keyboard_arrow_down</span>
+            <span style="font-size: 12px; letter-spacing: 1px;">LIVE RADIO</span>
+            <span class="material-icons-round" id="btn-playlist">queue_music</span>
         </div>
-        <div class="visualizer-wrapper">
+
+        <!-- Cover -->
+        <div class="cover-container">
             <canvas id="visualizer"></canvas>
-            <div class="album-art" id="album-cover"></div>
+            <div class="cover-art">💿</div>
         </div>
+
+        <!-- Info -->
         <div>
-            <div class="track-info">
-                <div class="track-title" id="track-title">Loading...</div>
-                <div class="track-artist" id="track-artist">Waiting for signal</div>
+            <div class="track-meta">
+                <div class="title" id="track-title">Loading...</div>
+                <div class="artist" id="track-artist">Connecting to satellite...</div>
             </div>
-            <div class="progress-area">
-                <div class="progress-bar" id="progress-bar-container">
-                    <div class="progress-fill" id="progress-fill"></div>
-                </div>
-                <div class="time-row">
-                    <span id="curr-time">0:00</span>
-                    <span id="dur-time">0:00</span>
-                </div>
+
+            <div class="progress-container">
+                <div class="progress-fill" id="progress-bar"></div>
             </div>
+            <div class="timers">
+                <span id="curr-time">0:00</span>
+                <span id="dur-time">0:00</span>
+            </div>
+
+            <!-- Controls -->
             <div class="controls">
-                <button class="btn" id="btn-prev"><span class="material-symbols-rounded">skip_previous</span></button>
-                <button class="btn btn-main" id="btn-play-pause"><span class="material-symbols-rounded" id="icon-play">play_arrow</span></button>
-                <button class="btn" id="btn-next"><span class="material-symbols-rounded">skip_next</span></button>
+                <div class="btn" id="btn-prev"><span class="material-icons-round">skip_previous</span></div>
+                <div class="btn btn-play" id="btn-play-pause">
+                    <span class="material-icons-round" id="icon-play">play_arrow</span>
+                </div>
+                <div class="btn" id="btn-next"><span class="material-icons-round">skip_next</span></div>
             </div>
         </div>
     </div>
+
+    <!-- Playlist -->
+    <div class="playlist-drawer" id="playlist-drawer">
+        <div class="drag-handle" onclick="togglePlaylist()"></div>
+        <div style="color: #666; font-size: 12px; margin-bottom: 10px;">UP NEXT</div>
+        <div id="playlist-content" style="color: white; font-weight: 600;">
+            Wait for update...
+        </div>
+    </div>
+
     <audio id="audio-player" crossorigin="anonymous"></audio>
     <script src="script.js"></script>
 </body>
