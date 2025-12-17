@@ -36,7 +36,7 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "format": f"bestaudio[ext=m4a][filesize<?{self._settings.PLAY_MAX_FILE_SIZE_MB}M]/bestaudio[filesize<?{self._settings.PLAY_MAX_FILE_SIZE_MB}M]/best[filesize<?{self._settings.PLAY_MAX_FILE_SIZE_MB}M]",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "128"}],
                 "writeinfojson": True,
