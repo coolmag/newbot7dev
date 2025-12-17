@@ -67,8 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
             artwork: [{ src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml' }]
         });
 
-        navigator.mediaSession.setActionHandler('play', () => { if(audio.src) { audio.play(); playIcon.textContent = 'pause'; } });
-        navigator.mediaSession.setActionHandler('pause', () => { if(audio.src) { audio.pause(); playIcon.textContent = 'play_arrow'; } });
+        navigator.mediaSession.setActionHandler('play', () => { if(audio.src) { audio.play(); } });
+        navigator.mediaSession.setActionHandler('pause', () => { if(audio.src) { audio.pause(); } });
         navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
         navigator.mediaSession.setActionHandler('previoustrack', () => {
             if (audio.currentTime > 3) {
@@ -97,11 +97,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMediaSessionPosition() {
         if (!('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) return;
         if (audio.duration && isFinite(audio.duration)) {
-            navigator.mediaSession.setPositionState({
-                duration: audio.duration,
-                playbackRate: audio.playbackRate,
-                position: audio.currentTime
-            });
+            try {
+                navigator.mediaSession.setPositionState({
+                    duration: audio.duration,
+                    playbackRate: audio.playbackRate,
+                    position: audio.currentTime
+                });
+            } catch (e) {
+                console.error("Failed to set media session position:", e);
+            }
         }
     }
 
@@ -176,7 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const MOODS = [ { name: "😌 Chill", search: "chill relaxing music" }, { name: "🎉 Party", search: "party music hits" }, { name: "💪 Workout", search: "workout motivation music" }, { name: "😢 Sad", search: "sad songs" }, { name: "❤️ Romantic", search: "love songs romantic" }, { name: "📚 Focus", search: "study focus music" }, { name: "😴 Sleep", search: "sleep relaxation music" } ];
 
     // === UI & PLAYER LOGIC ===
-
     function initGenresUI() {
         const createChips = (container, items) => {
             items.forEach(item => {
@@ -248,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (index < 0 || index >= playerPlaylist.length) {
             playIcon.textContent = 'play_arrow';
             titleEl.textContent = "Playlist finished";
-            artistEl.textContent = "Select a new genre to start";
+            artistEl.textContent = "Select a new genre";
             currentTrackIndex = -1;
             return;
         }
@@ -287,7 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // === VISUALIZER ===
-    // (Assuming these functions are filled in from the previous version)
     function setupCanvas() {
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -310,20 +312,60 @@ document.addEventListener('DOMContentLoaded', () => {
             animate();
         } catch (e) { console.warn("Audio init failed:", e); }
     }
-    function animate() { /* ... animation logic from previous version ... */ }
-
+    function animate() {
+        requestAnimationFrame(animate);
+        const w = canvas.getBoundingClientRect().width;
+        const h = canvas.getBoundingClientRect().height;
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.clearRect(0, 0, w, h);
+        let avgEnergy = 0;
+        if (analyser && dataArray) {
+            analyser.getByteFrequencyData(dataArray);
+            for (let i = 0; i < dataArray.length; i++) { avgEnergy += dataArray[i]; }
+            avgEnergy = avgEnergy / dataArray.length / 255;
+        }
+        const time = Date.now() / 1000;
+        const sunRadius = 35 + avgEnergy * 5;
+        const glowSize = sunRadius + 40 + avgEnergy * 20;
+        const outerGlow = ctx.createRadialGradient(cx, cy, sunRadius, cx, cy, glowSize);
+        outerGlow.addColorStop(0, `rgba(255, 149, 0, ${0.4 + avgEnergy * 0.3})`);
+        outerGlow.addColorStop(0.4, `rgba(255, 80, 50, ${0.2 + avgEnergy * 0.2})`);
+        outerGlow.addColorStop(1, 'rgba(255, 50, 50, 0)');
+        ctx.beginPath();
+        ctx.arc(cx, cy, glowSize, 0, Math.PI * 2);
+        ctx.fillStyle = outerGlow;
+        ctx.fill();
+        // Sun core
+        const coreGradient = ctx.createRadialGradient(cx - sunRadius * 0.2, cy - sunRadius * 0.2, 0, cx, cy, sunRadius);
+        coreGradient.addColorStop(0, '#FFFAE6');
+        coreGradient.addColorStop(0.3, '#FFE066');
+        coreGradient.addColorStop(0.7, '#FFAA33');
+        coreGradient.addColorStop(1, '#FF8822');
+        ctx.beginPath();
+        ctx.arc(cx, cy, sunRadius, 0, Math.PI * 2);
+        ctx.fillStyle = coreGradient;
+        ctx.shadowColor = '#FF9500';
+        ctx.shadowBlur = 20;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
 
     // === PLAYER CONTROLS & EVENTS ===
     playBtn.onclick = () => {
         initAudio();
         if (audioCtx?.state === 'suspended') audioCtx.resume();
-        audio.paused ? audio.play() : audio.pause();
+        if (audio.paused) {
+            audio.play().catch(e => console.error("Play click failed:", e));
+        } else {
+            audio.pause();
+        }
         tg.HapticFeedback.impactOccurred('light');
     };
     nextBtn.onclick = () => { playNextTrack(); tg.HapticFeedback.impactOccurred('medium'); };
     prevBtn.onclick = () => {
-        if (audio.currentTime > 3) audio.currentTime = 0;
-        else playPrevTrack();
+        if (audio.currentTime > 3) { audio.currentTime = 0; } 
+        else { playPrevTrack(); }
         tg.HapticFeedback.impactOccurred('medium');
     };
     rewindBtn.onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); updateMediaSessionPosition(); };
@@ -331,18 +373,16 @@ document.addEventListener('DOMContentLoaded', () => {
     playbackSpeed.onchange = () => { audio.playbackRate = parseFloat(playbackSpeed.value); updateMediaSessionPosition(); };
 
     audio.onplay = () => { playIcon.textContent = 'pause'; if (audioCtx?.state === 'suspended') audioCtx.resume(); updateMediaSessionMetadata(); };
-    audio.onpause = () => playIcon.textContent = 'play_arrow';
+    audio.onpause = () => { playIcon.textContent = 'play_arrow'; };
     audio.onended = () => playNextTrack();
-    audio.onloadedmetadata = () => updateMediaSessionPosition();
-
+    audio.onloadedmetadata = () => { durTimeEl.textContent = formatTime(audio.duration); updateMediaSessionPosition(); };
     audio.ontimeupdate = () => {
         if (isSeeking) return;
         if (audio.duration && isFinite(audio.duration)) {
-            const percent = (audio.currentTime / audio.duration) * 100;
-            progressEl.style.width = `${percent}%`;
-            progressHandle.style.left = `${percent}%`;
+            const percent = (audio.currentTime / audio.duration);
+            progressEl.style.width = `${percent * 100}%`;
+            progressHandle.style.left = `${percent * 100}%`;
             currTimeEl.textContent = formatTime(audio.currentTime);
-            durTimeEl.textContent = formatTime(audio.duration);
         }
     };
     audio.onprogress = () => {
@@ -364,4 +404,5 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSeekBar();
     setupMediaSession();
     setupBackgroundPlayback();
+    animate();
 });
