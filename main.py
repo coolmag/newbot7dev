@@ -12,7 +12,7 @@ from telegram import Update
 from telegram.ext import Application
 
 from auth import get_validated_user, WebAppUser
-from config import Settings
+from config import get_settings, Settings
 from logging_setup import setup_logging
 from cache import CacheService
 from youtube import YouTubeDownloader
