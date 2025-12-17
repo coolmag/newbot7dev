@@ -184,8 +184,15 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
 
         elif data.startswith("genre_sub:"):
             _, main_genre_key, subgenre_key = data.split(":")
+            subgenre_name = settings.GENRE_DATA.get("genres", {}).get(main_genre_key, {}).get("subgenres", {}).get(subgenre_key, {}).get("name", "Unknown")
             search_query = _get_style_search_query(settings, main_genre_key, subgenre_key)
-            await radio.start(chat_id, search_query, chat_type, message_id=query.message.message_id)
+            await radio.start(
+                chat_id, 
+                search_query, 
+                chat_type, 
+                message_id=query.message.message_id, 
+                display_name=subgenre_name
+            )
 
         # --- Radio Controls ---
         elif data == "stop_radio":

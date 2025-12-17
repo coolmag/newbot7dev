@@ -24,6 +24,7 @@ class RadioSession:
     chat_id: int
     query: str
     chat_type: str
+    display_name: Optional[str] = None
     started_at: float = field(default_factory=time.time)
     current: Optional[TrackInfo] = None
     current_file_path: Optional[Path] = None
@@ -82,9 +83,14 @@ class RadioManager:
             }
         return {"sessions": data}
 
-    async def start(self, chat_id: int, query: str, chat_type: str, message_id: Optional[int] = None):
+    async def start(self, chat_id: int, query: str, chat_type: str, message_id: Optional[int] = None, display_name: Optional[str] = None):
         await self.stop(chat_id)
-        session = RadioSession(chat_id=chat_id, query=query.strip(), chat_type=chat_type)
+        session = RadioSession(
+            chat_id=chat_id, 
+            query=query.strip(), 
+            chat_type=chat_type,
+            display_name=display_name or query.strip()
+        )
         self._sessions[chat_id] = session
         
         if message_id:
@@ -182,7 +188,7 @@ class RadioManager:
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     
-                    wait_time = float(track_info.duration + 10) if track_info and track_info.duration else float(self._settings.RADIO_MAX_DURATION_S)
+                    wait_time = 90.0
                     
                     await asyncio.wait_for(s.skip_event.wait(), timeout=wait_time)
                 except asyncio.TimeoutError:
@@ -224,7 +230,7 @@ class RadioManager:
         else: status = "⏳ Ожидание..."
         track = s.current.title if s.current else "..."
         artist = s.current.artist if s.current else "..."
-        query = s.query
+        query = s.display_name or s.query
         return f"""
 📻 *CYBER RADIO V7*
 ━━━━━━━━━━━━━━━━━━

@@ -16,6 +16,7 @@ from config import get_settings, Settings
 from logging_setup import setup_logging
 from cache import CacheService
 from youtube import YouTubeDownloader
+from models import Source
 from radio import RadioManager
 from handlers import setup_handlers
 
@@ -88,6 +89,9 @@ async def lifespan(app: FastAPI):
     # State
     app.state.tg_app = tg_app
     app.state.radio = radio
+    app.state.settings = settings
+    app.state.cache = cache
+    app.state.downloader = youtube
 
     yield
 
@@ -142,6 +146,15 @@ async def start_radio_from_webapp(req: RadioStartRequest, user: WebAppUser = Dep
     await radio.start(chat_id=req.chat_id, query=req.query, chat_type="WebApp")
     return {"ok": True}
 
+@app.get("/api/player/playlist")
+async def get_player_playlist(query: str):
+    downloader = app.state.downloader
+    if not query:
+        raise HTTPException(status_code=400, detail="Query parameter is required.")
+    
+    tracks = await downloader.search(query, limit=30)
+    return {"playlist": tracks}
+
 @app.post("/telegram")
 async def webhook(req: Request):
     """Единственная точка входа для Telegram."""
@@ -159,13 +172,25 @@ async def webhook(req: Request):
 
 @app.get("/audio/{track_id}")
 async def get_audio(track_id: str):
-    radio = app.state.radio
-    for s in radio._sessions.values():
-        if s.current and s.current.identifier == track_id:
-            if s.current_file_path and s.current_file_path.exists():
-                return FileResponse(
-                    s.current_file_path,
-                    media_type=audio_mime_for(s.current_file_path),
-                    headers={"Access-Control-Allow-Origin": "*"}
-                )
-    raise HTTPException(status_code=404)
+    cache = app.state.cache
+    downloader = app.state.downloader
+    
+    # 1. Check cache for file path
+    cached = await cache.get(f"yt:{track_id}", Source.YOUTUBE)
+    if cached and Path(cached.file_path).exists():
+        return FileResponse(
+            cached.file_path,
+            media_type=audio_mime_for(Path(cached.file_path)),
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+
+    # 2. If not in cache, download it on-demand
+    result = await downloader.download(track_id)
+    if result.success and result.file_path and Path(result.file_path).exists():
+        return FileResponse(
+            result.file_path,
+            media_type=audio_mime_for(Path(result.file_path)),
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+
+    raise HTTPException(status_code=404, detail="Track not found or failed to download.")
