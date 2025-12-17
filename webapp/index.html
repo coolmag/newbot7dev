@@ -3,71 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solar Player</title>
+    <title>Solar Radio</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="style.css?v=3.1">
+    <link rel="stylesheet" href="style.css?v=4.1">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 
-    <div class="player-container">
-        <!-- Header -->
-        <div class="header">
-            <span class="material-icons-round header-btn" onclick="window.close()">keyboard_arrow_down</span>
-            <div class="live-badge">
-                <span class="live-dot"></span>
-                LIVE
+    <!-- MAIN PLAYER SCREEN -->
+    <div class="screen screen-player active" id="screen-player">
+        <div class="player-container">
+            <!-- Header -->
+            <div class="header">
+                <span class="material-icons-round header-btn" id="btn-genres">apps</span>
+                <div class="live-badge">
+                    <span class="live-dot"></span>
+                    <span id="current-genre">LIVE RADIO</span>
+                </div>
+                <span class="material-icons-round header-btn" id="btn-playlist">queue_music</span>
             </div>
-            <span class="material-icons-round header-btn" id="btn-playlist">queue_music</span>
-        </div>
 
-        <!-- Sun Visualizer -->
-        <div class="visualizer-wrapper">
-            <canvas id="visualizer"></canvas>
-        </div>
-
-        <!-- Track Info -->
-        <div class="track-info">
-            <div class="title" id="track-title">Loading...</div>
-            <div class="artist" id="track-artist">Connecting...</div>
-        </div>
-
-        <!-- Progress -->
-        <div class="progress-section">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-bar"></div>
+            <!-- Sun Visualizer -->
+            <div class="visualizer-wrapper">
+                <canvas id="visualizer"></canvas>
             </div>
-            <div class="time-display">
-                <span id="curr-time">0:00</span>
-                <span id="dur-time">0:00</span>
-            </div>
-        </div>
 
-        <!-- Controls -->
-        <div class="controls">
-            <button class="ctrl-btn" id="btn-prev">
-                <span class="material-icons-round">skip_previous</span>
-            </button>
-            <button class="ctrl-btn ctrl-btn-main" id="btn-play-pause">
-                <span class="material-icons-round" id="icon-play">play_arrow</span>
-            </button>
-            <button class="ctrl-btn" id="btn-next">
-                <span class="material-icons-round">skip_next</span>
-            </button>
+            <!-- Track Info -->
+            <div class="track-info">
+                <div class="title" id="track-title">Select a genre</div>
+                <div class="artist" id="track-artist">Tap 🎵 to browse</div>
+            </div>
+
+            <!-- Progress Bar with Seek -->
+            <div class="progress-section">
+                <div class="progress-bar" id="progress-container">
+                    <div class="progress-buffered" id="progress-buffered"></div>
+                    <div class="progress-fill" id="progress-bar"></div>
+                    <div class="progress-handle" id="progress-handle"></div>
+                </div>
+                <div class="time-display">
+                    <span id="curr-time">0:00</span>
+                    <span id="dur-time">0:00</span>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls">
+                <!-- Rewind 10s -->
+                <button class="ctrl-btn ctrl-btn-small" id="btn-rewind">
+                    <span class="material-icons-round">replay_10</span>
+                </button>
+                
+                <button class="ctrl-btn" id="btn-prev">
+                    <span class="material-icons-round">skip_previous</span>
+                </button>
+                
+                <button class="ctrl-btn ctrl-btn-main" id="btn-play-pause">
+                    <span class="material-icons-round" id="icon-play">play_arrow</span>
+                </button>
+                
+                <button class="ctrl-btn" id="btn-next">
+                    <span class="material-icons-round">skip_next</span>
+                </button>
+                
+                <!-- Forward 10s -->
+                <button class="ctrl-btn ctrl-btn-small" id="btn-forward">
+                    <span class="material-icons-round">forward_10</span>
+                </button>
+            </div>
+
+            <!-- Volume / Speed -->
+            <div class="extra-controls">
+                <div class="speed-control">
+                    <span class="material-icons-round">speed</span>
+                    <select id="playback-speed">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Playlist Drawer -->
-    <div class="playlist-drawer" id="playlist-drawer">
+    <!-- GENRE PICKER SCREEN -->
+    <div class="screen screen-genres" id="screen-genres">
+        <div class="genres-container">
+            <!-- Header -->
+            <div class="genres-header">
+                <span class="material-icons-round header-btn" id="btn-back-player">arrow_back</span>
+                <h2>Choose Genre</h2>
+                <span class="material-icons-round header-btn" style="opacity:0">x</span>
+            </div>
+
+            <!-- Search -->
+            <div class="search-box">
+                <span class="material-icons-round">search</span>
+                <input type="text" id="genre-search" placeholder="Search genres...">
+            </div>
+
+            <!-- Quick Picks -->
+            <div class="section">
+                <div class="section-title">🔥 Trending Now</div>
+                <div class="chips-row" id="trending-chips"></div>
+            </div>
+
+            <!-- Decades -->
+            <div class="section">
+                <div class="section-title">📅 By Decade</div>
+                <div class="chips-row" id="decade-chips"></div>
+            </div>
+
+            <!-- Moods -->
+            <div class="section">
+                <div class="section-title">😊 By Mood</div>
+                <div class="chips-row" id="mood-chips"></div>
+            </div>
+
+            <!-- Main Genres -->
+            <div class="section">
+                <div class="section-title">🎵 All Genres</div>
+                <div class="genre-grid" id="genre-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SUBGENRE DRAWER -->
+    <div class="drawer" id="subgenre-drawer">
+        <div class="drawer-handle"></div>
+        <div class="drawer-header">
+            <span class="drawer-icon" id="drawer-icon">🎵</span>
+            <h3 id="drawer-title">Genre</h3>
+        </div>
+        <div class="subgenre-list" id="subgenre-list"></div>
+    </div>
+
+    <!-- PLAYLIST DRAWER -->
+    <div class="drawer" id="playlist-drawer">
         <div class="drawer-handle" onclick="togglePlaylist()"></div>
-        <div class="drawer-title">UP NEXT</div>
+        <div class="drawer-header">
+            <span class="material-icons-round" style="color: var(--sun-mid)">queue_music</span>
+            <h3>Up Next</h3>
+        </div>
         <div id="playlist-content" class="playlist-items">
-            Загрузка...
+            Loading...
         </div>
     </div>
 
-    <audio id="audio-player" crossorigin="anonymous"></audio>
-    <script src="script.js?v=3.1"></script>
+    <!-- Overlay -->
+    <div class="overlay" id="overlay"></div>
+
+    <audio id="audio-player" crossorigin="anonymous" playsinline></audio>
+    <script src="script.js?v=4.1"></script>
 </body>
 </html>
