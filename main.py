@@ -103,6 +103,11 @@ app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 async def health():
     return {"ok": True}
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("webapp/favicon.svg", media_type="image/svg+xml")
+
+
 @app.get("/api/radio/status")
 async def radio_status(chat_id: str | None = None):
     radio = app.state.radio
