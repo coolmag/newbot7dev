@@ -35,18 +35,34 @@ document.addEventListener('DOMContentLoaded', () => {
             analyser.fftSize = 128;
             dataArray = new Uint8Array(analyser.frequencyBinCount);
             isVisualizerInitialized = true;
+            
+            // Set initial size and add listener for responsiveness
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
             renderVisualizer();
         } catch (e) {
-            console.warn("Audio Visualizer failed to initialize.", e);
+            console.warn("Audio Visualizer failed to initialize. User interaction may be required.", e);
         }
+    }
+
+    function resizeCanvas() {
+        const w = canvas.getBoundingClientRect().width;
+        const h = canvas.getBoundingClientRect().height;
+        // Update canvas resolution to match its display size to prevent distortion
+        canvas.width = w;
+        canvas.height = h;
     }
 
     function renderVisualizer() {
         requestAnimationFrame(renderVisualizer);
         if (!analyser) return;
         analyser.getByteFrequencyData(dataArray);
-        const w = canvas.getBoundingClientRect().width, h = canvas.getBoundingClientRect().height;
+
+        // Use canvas's own width and height which are now correctly set
+        const w = canvas.width, h = canvas.height;
         const cx = w / 2, cy = h / 2, radius = 110;
+        
         ctx.clearRect(0, 0, w, h);
         ctx.beginPath();
         for (let i = 0; i < dataArray.length; i++) {
@@ -103,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
                 title: metadata.title, artist: metadata.artist, album: 'Cyber Radio',
-                artwork: [{ src: 'https://via.placeholder.com/512.png?text=CR', sizes: '512x512', type: 'image/png' }]
+                artwork: [{ src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIGZpbGw9IiNjY2MiLz48cGF0aCBmaWxsPSIjODg4IiBkPSJNMjU2IDEyOHYxOTJjMCAyNi41LTIxLjUgNDgtNDggNDhzLTQ4LTIxLjUtNDgtNDggMjEuNS00OCA0OC00OGMxMS4yIDAgMjEuMyAzLjggMjkuMiAxMC4ydj0xOTJoOTZ2MTI4YzAgMjYuNS0yMS41IDQ4LTQ4IDQ4cy00OC0yMS41LTQ4LTQ4IDIxLjUtNDggNDgtNDhjMTEuMiAwIDIxLjMgMy44IDI5LjIgMTAuMnYtMTI4aDMyWiIvPjwvc3ZnPg==', sizes: '512x512', type: 'image/svg+xml' }]
             });
             navigator.mediaSession.setActionHandler('play', togglePlay);
             navigator.mediaSession.setActionHandler('pause', togglePlay);
