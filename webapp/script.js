@@ -121,6 +121,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => playNextTrack(), 1000);
             } else if (err.name === 'NotAllowedError') {
                 console.log("Playback prevented by browser policy");
+                titleEl.textContent = "Playback blocked";
+                artistEl.textContent = "Tap play button to start";
+                haptic.notification('error');
             }
             playIcon.textContent = 'play_arrow';
         });
