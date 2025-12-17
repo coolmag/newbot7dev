@@ -57,7 +57,7 @@ class YouTubeDownloader:
             duration = int(e.get('duration') or 0)
             if not (120 <= duration <= 900): return False
             
-            BANNED = ['cover', 'live', 'concert', 'karaoke', 'instrumental', 'vlog', 'parody', 'reaction', 'playlist', 'сборник', 'mix', 'микс', 'chart', 'топ', 'top', 'hits', 'хиты', 'mashup']
+            BANNED = ['cover', 'live', 'concert', 'karaoke', 'instrumental', 'vlog', 'parody', 'reaction', 'mashup']
             if any(b in title for b in BANNED): return False
             if title.count(',') > 3: return False
             return True
