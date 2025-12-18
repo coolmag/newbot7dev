@@ -42,10 +42,10 @@ class Settings(BaseSettings):
     PLAY_MAX_SONG_DURATION_S: int = 900 # Max duration for individual songs (e.g., /play command)
     PLAY_MIN_SONG_DURATION_S: int = 120 # Min duration for individual songs
 
-    PLAY_MAX_GENRE_DURATION_S: int = 3600 # Max duration for genre mixes/compilations
+    PLAY_MAX_GENRE_DURATION_S: int = 7200 # Max duration for genre mixes/compilations (2 hours)
     PLAY_MIN_GENRE_DURATION_S: int = 60 # Min duration for genre mixes/compilations
     
-    PLAY_MAX_FILE_SIZE_MB: int = 50
+    PLAY_MAX_FILE_SIZE_MB: int = 200
 
     @validator("ADMIN_ID_LIST", pre=True, always=True)
     def _assemble_admin_ids(cls, v, values) -> List[int]:
