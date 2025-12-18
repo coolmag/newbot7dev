@@ -22,7 +22,10 @@ def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> Inlin
             InlineKeyboardButton("⏹️ Стоп", callback_data="stop_radio"),
             InlineKeyboardButton("⏭️ Скип", callback_data="skip_track"),
         ],
-        [InlineKeyboardButton("📂 Каталог жанров", callback_data="show_main_genres")]
+        [
+            InlineKeyboardButton("📂 Каталог жанров", callback_data="show_main_genres"),
+            InlineKeyboardButton("🗳️ Голосование", callback_data="show_vote")
+        ]
     ]
     return InlineKeyboardMarkup(keyboard)
 

@@ -141,6 +141,21 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
                 await query.answer("✅ Ваш голос принят!")
             else:
                 await query.answer("⛔ Голосование уже завершено.", show_alert=True)
+        
+        elif data == "show_vote":
+            session = radio._sessions.get(chat_id)
+            if session and session.is_vote_in_progress:
+                try:
+                    # Reply with a new message showing the current poll
+                    await query.message.reply_text(
+                        "📢 **Идет голосование за жанр!**",
+                        reply_markup=get_genre_voting_keyboard(session.current_vote_genres, session.votes),
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                except BadRequest: pass # In case of issues sending the message
+            else:
+                await query.answer("⛔ В данный момент голосование неактивно.", show_alert=True)
+
         elif data == "stop_radio": await radio.stop(chat_id)
         elif data == "skip_track": await radio.skip(chat_id)
         elif data == "cancel_menu": await query.edit_message_text("Меню закрыто.", reply_markup=None)
