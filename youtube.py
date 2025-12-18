@@ -23,7 +23,7 @@ class YouTubeDownloader:
 
     def _get_opts(self, mode: str = "download") -> Dict[str, Any]:
         opts: Dict[str, Any] = {
-            "quiet": True, "no_progress": True, "no_warnings": True, "noplaylist": True, "socket_timeout": 15,
+            "quiet": True, "no_progress": True, "logger": None, "no_warnings": True, "noplaylist": True, "socket_timeout": 15,
             "source_address": "0.0.0.0", "no_check_certificate": True, "geo_bypass": True,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         }
@@ -71,14 +71,23 @@ class YouTubeDownloader:
         opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
 
         try:
-            strict_query = f"ytsearch15:{query} official audio"
-            info = await self._extract_info(strict_query, opts)
-            entries = info.get("entries", []) or []
+            # Smart search: for short queries (likely genres), skip the strict search.
+            is_genre_query = len(query.split()) <= 3
+            results = []
+
+            if not is_genre_query:
+                strict_query = f"ytsearch15:{query} official audio"
+                info = await self._extract_info(strict_query, opts)
+                entries = info.get("entries", []) or []
+                results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
             
-            results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-            
+            # If the strict search yields too few results, or it's a genre query, do a broader search.
             if len(results) < 5:
-                logger.info(f"[Search] Строгий поиск дал мало результатов. Дополняю общим.")
+                if is_genre_query:
+                    logger.info(f"[Search] Короткий запрос, используется широкий поиск.")
+                else:
+                    logger.info(f"[Search] Строгий поиск дал мало результатов. Дополняю общим.")
+                
                 fallback_query = f"ytsearch{limit}:{query}"
                 info = await self._extract_info(fallback_query, opts)
                 fallback_entries = info.get("entries", []) or []

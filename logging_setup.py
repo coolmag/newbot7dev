@@ -11,3 +11,4 @@ def setup_logging() -> None:
     # Скрываем подробные логи httpx и httpcore, чтобы не печатать токен
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
