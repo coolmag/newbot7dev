@@ -243,7 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
             playerPlaylist = data.playlist || [];
             console.log('First track:', playerPlaylist[0]);
             if (playerPlaylist.length > 0) {
-                playTrack(0);
+                // Даем бэкенду небольшую фору для кэширования первого трека
+                setTimeout(() => playTrack(0), 1500);
             } else {
                 titleEl.textContent = "No tracks found";
                 artistEl.textContent = "Try another genre";
