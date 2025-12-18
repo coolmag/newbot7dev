@@ -52,6 +52,38 @@ function renderProgress() {
 }
 
 /**
+ * Renders the contents of the playlist drawer based on the current playlist in the store.
+ */
+export function renderPlaylistDrawer() {
+    const playlistContent = document.getElementById('playlist-content');
+    if (!playlistContent) return;
+
+    playlistContent.innerHTML = ''; // Clear previous items
+
+    if (!store.playlist || store.playlist.length === 0) {
+        playlistContent.innerHTML = '<div class="playlist-empty">No tracks in queue</div>';
+        return;
+    }
+
+    store.playlist.forEach((track, index) => {
+        const item = document.createElement('button');
+        // Add a class to identify these items for event delegation
+        item.className = 'playlist-item' + (index === store.currentTrackIndex ? ' active' : '');
+        // Store the track index in a data attribute for the event handler
+        item.dataset.trackIndex = index;
+
+        item.innerHTML = `
+            <span class="material-icons-round">${index === store.currentTrackIndex ? 'play_circle' : 'music_note'}</span>
+            <div class="playlist-track-info">
+                <div class="playlist-track-title">${track.title || 'Unknown'}</div>
+                <div class="playlist-track-artist">${track.artist || 'Unknown'}</div>
+            </div>
+        `;
+        playlistContent.appendChild(item);
+    });
+}
+
+/**
  * The main render function for the application.
  * It reads from the global store and updates the DOM to reflect the current state.
  */

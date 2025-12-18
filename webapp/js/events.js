@@ -4,6 +4,7 @@ import store from './store.js';
 import * as elements from './elements.js';
 import * as player from './player.js';
 import * as api from './api.js';
+import * as renderer from './renderer.js';
 import { haptic } from './ui-helpers.js';
 import { GENRES, TRENDING, DECADES, MOODS } from './constants.js';
 
@@ -155,6 +156,29 @@ export function initializeEventListeners() {
         closeGenresScreen();
         haptic.impact('medium');
     });
+
+    elements.btnPlaylist?.addEventListener('click', () => {
+        // First, render the most current state of the playlist
+        renderer.renderPlaylistDrawer();
+        // Then, show the drawer
+        elements.playlistDrawer?.classList.add('active');
+        elements.overlay?.classList.add('active');
+        haptic.impact('medium');
+    });
+
+    // Use event delegation for clicks on playlist items
+    document.getElementById('playlist-content')?.addEventListener('click', (e) => {
+        const item = e.target.closest('.playlist-item');
+        if (item && item.dataset.trackIndex) {
+            const index = parseInt(item.dataset.trackIndex, 10);
+            if (!isNaN(index)) {
+                player.playTrack(index);
+                closeDrawers(); // Close drawer after selection
+                haptic.impact('light');
+            }
+        }
+    });
+
     elements.overlay?.addEventListener('click', closeDrawers);
     
     // --- Initialize static UI parts ---
