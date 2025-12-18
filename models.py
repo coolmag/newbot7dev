@@ -67,3 +67,19 @@ class TrackInfo:
             view_count=info.get("view_count"),
             like_count=info.get("like_count"),
         )
+
+# === Callback Data Prefixes ===
+# Using classes for namespacing callback data to avoid magic strings
+
+class MenuCallback:
+    """Callbacks related to the main menu."""
+    VOTE_FOR_GENRE = "menu:vote_genre"
+    # Add other menu callbacks if needed
+
+class VoteCallback:
+    """Callbacks related to voting."""
+    PREFIX = "vote:"
+
+class GenreCallback:
+    """Callbacks related to admin genre selection."""
+    PREFIX = "genre:"
