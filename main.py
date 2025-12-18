@@ -189,15 +189,19 @@ async def get_player_playlist(query: str, background_tasks: BackgroundTasks):
 @app.post("/telegram")
 async def webhook(req: Request):
     """Единственная точка входа для Telegram."""
-    data = await req.json()
     tg_app = app.state.tg_app
-    
-    # Обрабатываем обновление вручную
     try:
+        data = await req.json()
         update = Update.de_json(data, tg_app.bot)
         await tg_app.process_update(update)
     except Exception as e:
-        logger.error(f"Update error: {e}")
+        body = await req.body()
+        logger.error(
+            "Error processing webhook. Body: %s, Error: %s",
+            body.decode(errors="ignore"),
+            e,
+            exc_info=True, # Log full traceback
+        )
         
     return {"ok": True}
 
