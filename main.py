@@ -165,13 +165,31 @@ async def get_player_playlist(query: str, background_tasks: BackgroundTasks):
     downloader: YouTubeDownloader = app.state.downloader
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is required.")
-    
-    tracks = await downloader.search(query, limit=15) # Уменьшим лимит для ускорения
-    
-    # Запускаем загрузку в фоне
-    background_tasks.add_task(download_playlist_in_background, downloader, tracks)
-    
-    # Преобразуем TrackInfo объекты в словари для JSON
+
+    tracks = await downloader.search(query, limit=15)
+
+    if not tracks:
+        return {"playlist": []}
+
+    # 1. Wait for the FIRST track to download to ensure playback starts immediately.
+    first_track = tracks[0]
+    try:
+        logger.info(f"Starting blocking download for the first track: {first_track.identifier}")
+        await downloader.download(first_track.identifier)
+        logger.info(f"First track {first_track.identifier} downloaded successfully.")
+    except Exception as e:
+        logger.error(
+            f"Failed to download the first track {first_track.identifier}: {e}. Playlist might fail.",
+            exc_info=True
+        )
+        # We can still proceed. The frontend's skip logic might save us, but it's not ideal.
+
+    # 2. Download the rest of the tracks in the background.
+    remaining_tracks = tracks[1:]
+    if remaining_tracks:
+        background_tasks.add_task(download_playlist_in_background, downloader, remaining_tracks)
+
+    # 3. Format and return the full playlist.
     playlist = []
     for track in tracks:
         playlist.append({
@@ -181,9 +199,9 @@ async def get_player_playlist(query: str, background_tasks: BackgroundTasks):
             "identifier": track.identifier,
             "url": f"/audio/{track.identifier}",
             "view_count": track.view_count,
-            "like_count": track.like_count
+            "like_count": track.like_count,
         })
-    
+
     return {"playlist": playlist}
 
 @app.post("/telegram")
