@@ -81,7 +81,6 @@ class YouTubeDownloader:
             return True
 
         opts = self._get_opts("search")
-        opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
 
         try:
             is_genre_query = len(query.split()) <= 3
@@ -89,14 +88,18 @@ class YouTubeDownloader:
             
             results = []
 
-            # For non-genre queries, try a strict search first
+            # For non-genre queries, try a strict search first with the !is_live filter
             if not is_genre_query:
+                opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
                 strict_query = f"ytsearch15:{query} official audio"
                 info = await self._extract_info(strict_query, opts)
                 entries = info.get("entries", []) or []
                 results = [TrackInfo.from_yt_info(e) for e in entries if active_filter(e)]
             
             # If the strict search yields too few results, or it's a genre query, do a broader search.
+            # The !is_live filter from the strict search (if run) is still in opts, so we reset it for the broad search.
+            opts.pop('match_filter', None)
+            
             if len(results) < 5:
                 if is_genre_query:
                     logger.info(f"[Search] Короткий запрос, используется широкий поиск с мягким фильтром.")

@@ -260,12 +260,17 @@ class RadioManager:
                     self.start_genre_vote(s)
                 
                 if len(s.playlist) < 5:
-                    current_query = self._get_random_style_query(s) if s.winning_genre else s.query
+                    current_query = s.query
+                    # If the session is for a random query, get a specific genre query now
+                    if current_query == "random":
+                        current_query = self._get_random_style_query(s)
+                    
                     if not await self._fetch_playlist(s, current_query):
                         s.fails_in_row += 1
                         if s.fails_in_row >= 2:
                             await self._send_error_message(s.chat_id, f"Не могу найти треки по запросу '{current_query}'. Попробую что-нибудь другое...")
                             s.winning_genre = None # Reset winning genre to try something random
+                            s.query = "random" # Set back to random to re-trigger random selection
                             s.fails_in_row = 0
                         await asyncio.sleep(5)
                         continue

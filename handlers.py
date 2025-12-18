@@ -87,7 +87,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
         query = " ".join(context.args) if context.args else "random"
-        if query == "random": query = radio._get_random_style_query(radio._sessions.get(chat.id))
         try: await update.message.delete()
         except: pass
         await radio.start(chat.id, query, chat.type)
