@@ -291,18 +291,18 @@
         </div>
     </div>
 
-    <!-- GENRE PICKER SCREEN -->
-    <div class="screen screen-genres" id="screen-genres">
-        <div class="genres-container">
-            <div class="genres-header">
-                <span class="material-icons-round header-btn" id="btn-back-player">arrow_back</span>
-                <h2>Choose Genre</h2>
-                <span class="material-icons-round header-btn" style="opacity:0">x</span>
-            </div>
-
+    <!-- GENRE PICKER DRAWER -->
+    <div class="drawer genre-drawer" id="screen-genres">
+        <div class="drawer-handle"></div>
+        <div class="drawer-header">
+            <span class="material-icons-round header-btn" id="btn-back-player">arrow_back</span>
+            <h2>Choose Genre</h2>
+            <span class="material-icons-round header-btn" style="opacity:0">x</span>
+        </div>
+        <div class="drawer-content genres-container">
             <div class="search-box">
                 <span class="material-icons-round">search</span>
-                <input type="text" id="genre-search" placeholder="Search genres...">
+                <input type="text" id="genre-search" placeholder="Search genres, artists, or tracks...">
             </div>
 
             <div class="section">
@@ -352,6 +352,6 @@
     <div class="overlay" id="overlay"></div>
 
     <audio id="audio-player" crossorigin="anonymous" playsinline></audio>
-    <script src="script.js?v=4.2"></script>
+    <script type="module" src="js/main.js?v=4.3"></script>
 </body>
 </html>

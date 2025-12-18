@@ -34,7 +34,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1); /* Unified transition */
 }
 
 .screen-player {
@@ -45,21 +45,13 @@ body {
     padding: 20px;
 }
 
-.screen-player.slide-left {
-    transform: translateX(-30%);
-    opacity: 0.5;
+.screen-player.blurred {
+    filter: blur(5px);
+    transform: scale(0.95);
+    opacity: 0.7;
+    pointer-events: none;
 }
 
-.screen-genres {
-    z-index: 2;
-    transform: translateX(100%);
-    background: var(--bg);
-    overflow-y: auto;
-}
-
-.screen-genres.active {
-    transform: translateX(0);
-}
 
 /* === PLAYER CONTAINER === */
 .player-container {
@@ -336,22 +328,23 @@ body {
     color: var(--text);
 }
 
-/* === GENRES SCREEN === */
+/* === GENRES DRAWER === */
+.genre-drawer {
+    max-height: 80vh; /* Make it a bit taller than other drawers, adjust as needed */
+    padding-bottom: 20px; /* Adjust internal padding */
+    z-index: 100; /* Ensure it's above the player screen, but below subgenre/playlist drawers */
+}
+
+/* Adjust padding for the content inside the drawer */
+.genre-drawer .drawer-content {
+    padding: 0 20px;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
 .genres-container {
-    padding: 20px;
-    padding-bottom: 100px;
-}
-
-.genres-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-}
-
-.genres-header h2 {
-    font-size: 20px;
-    font-weight: 700;
+    /* Remove old padding as it's now handled by the drawer content */
+    padding: 0; 
+    padding-bottom: 0;
 }
 
 /* === SEARCH === */
