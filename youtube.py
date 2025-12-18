@@ -140,9 +140,7 @@ class YouTubeDownloader:
                 return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
 
             filesize = info.get('filesize_approx') or info.get('filesize')
-            if not filesize:
-                return DownloadResult(success=False, error="Не удалось определить размер файла перед загрузкой.")
-            if filesize > max_size_bytes:
+            if filesize and filesize > max_size_bytes:
                 return DownloadResult(success=False, error=f"Файл слишком большой ({filesize/(1024*1024):.1f}MB)")
             # --- End Pre-download Checks ---
 
