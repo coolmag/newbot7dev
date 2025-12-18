@@ -594,10 +594,66 @@ body {
     visibility: visible;
 }
 
-/* === PLAYLIST === */
-.playlist-items {
+/* === PLAYLIST DRAWER === */
+.playlist-empty {
+    padding: 2rem; 
+    text-align: center; 
     color: var(--text-dim);
+}
+
+.playlist-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    width: 100%;
+    color: var(--text);
+    text-align: left;
+}
+
+.playlist-item:hover {
+    background: var(--bg-card-hover);
+}
+
+.playlist-item.active {
+    background: var(--bg-card-hover);
+    color: var(--sun-core);
+}
+
+.playlist-item .material-icons-round {
+    color: var(--text-dim);
+    font-size: 22px;
+}
+
+.playlist-item.active .material-icons-round {
+    color: var(--sun-core);
+}
+
+.playlist-track-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.playlist-track-title {
+    font-weight: 500;
     font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.playlist-track-artist {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* === SCROLLBAR === */
