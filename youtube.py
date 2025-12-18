@@ -61,7 +61,7 @@ class YouTubeDownloader:
             title = e.get('title', '').lower()
             if not title: return False
             duration = int(e.get('duration') or 0)
-            if not (120 <= duration <= 900): return False  # 2-15 minutes
+            if not (self._settings.PLAY_MIN_SONG_DURATION_S <= duration <= self._settings.PLAY_MAX_SONG_DURATION_S): return False
             
             BANNED = ['cover', 'live', 'concert', 'karaoke', 'instrumental', 'vlog', 'parody', 'reaction', 'mashup']
             if any(b in title for b in BANNED): return False
@@ -74,7 +74,7 @@ class YouTubeDownloader:
             title = e.get('title', '').lower()
             if not title: return False
             duration = int(e.get('duration') or 0)
-            if not (60 <= duration <= 3600): return False # 1 min - 1 hour
+            if not (self._settings.PLAY_MIN_GENRE_DURATION_S <= duration <= self._settings.PLAY_MAX_GENRE_DURATION_S): return False
             
             BANNED = ['karaoke', 'vlog', 'parody', 'reaction'] # Less strict ban list
             if any(b in title for b in BANNED): return False
@@ -131,10 +131,20 @@ class YouTubeDownloader:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             info = await self._extract_info(video_url, self._get_opts("search"))
             
+            # --- Robust Pre-download Checks ---
             max_size_bytes = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
+            
+            # Check duration again as a last line of defense
+            track_info_from_download = TrackInfo.from_yt_info(info)
+            if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
+                return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
+
             filesize = info.get('filesize_approx') or info.get('filesize')
-            if filesize and filesize > max_size_bytes:
+            if not filesize:
+                return DownloadResult(success=False, error="Не удалось определить размер файла перед загрузкой.")
+            if filesize > max_size_bytes:
                 return DownloadResult(success=False, error=f"Файл слишком большой ({filesize/(1024*1024):.1f}MB)")
+            # --- End Pre-download Checks ---
 
             loop = asyncio.get_running_loop()
             download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(self._get_opts("download")).download([video_url]))
