@@ -25,7 +25,7 @@ def get_downloader_dep() -> YouTubeDownloader:
     """Dependency to get the YouTubeDownloader."""
     return YouTubeDownloader(
         settings=get_settings_dep(), 
-        cache=get_cache_service_dep()
+        cache_service=get_cache_service_dep()
     )
 
 @lru_cache()
