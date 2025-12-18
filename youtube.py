@@ -55,36 +55,51 @@ class YouTubeDownloader:
     async def search(self, query: str, limit: int = 30, **kwargs) -> List[TrackInfo]:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
 
-        def filter_entry(e: Dict[str, Any]) -> bool:
+        def strict_filter_entry(e: Dict[str, Any]) -> bool:
+            """A strict filter for finding specific, high-quality tracks."""
             if not (e and e.get("id") and len(e.get("id")) == 11 and e.get("title")): return False
             title = e.get('title', '').lower()
             if not title: return False
             duration = int(e.get('duration') or 0)
-            if not (120 <= duration <= 900): return False
+            if not (120 <= duration <= 900): return False  # 2-15 minutes
             
             BANNED = ['cover', 'live', 'concert', 'karaoke', 'instrumental', 'vlog', 'parody', 'reaction', 'mashup']
             if any(b in title for b in BANNED): return False
             if title.count(',') > 3: return False
             return True
 
+        def relaxed_filter_entry(e: Dict[str, Any]) -> bool:
+            """A more relaxed filter for genre queries, allowing mixes and compilations."""
+            if not (e and e.get("id") and len(e.get("id")) == 11 and e.get("title")): return False
+            title = e.get('title', '').lower()
+            if not title: return False
+            duration = int(e.get('duration') or 0)
+            if not (60 <= duration <= 3600): return False # 1 min - 1 hour
+            
+            BANNED = ['karaoke', 'vlog', 'parody', 'reaction'] # Less strict ban list
+            if any(b in title for b in BANNED): return False
+            return True
+
         opts = self._get_opts("search")
         opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
 
         try:
-            # Smart search: for short queries (likely genres), skip the strict search.
             is_genre_query = len(query.split()) <= 3
+            active_filter = relaxed_filter_entry if is_genre_query else strict_filter_entry
+            
             results = []
 
+            # For non-genre queries, try a strict search first
             if not is_genre_query:
                 strict_query = f"ytsearch15:{query} official audio"
                 info = await self._extract_info(strict_query, opts)
                 entries = info.get("entries", []) or []
-                results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+                results = [TrackInfo.from_yt_info(e) for e in entries if active_filter(e)]
             
             # If the strict search yields too few results, or it's a genre query, do a broader search.
             if len(results) < 5:
                 if is_genre_query:
-                    logger.info(f"[Search] Короткий запрос, используется широкий поиск.")
+                    logger.info(f"[Search] Короткий запрос, используется широкий поиск с мягким фильтром.")
                 else:
                     logger.info(f"[Search] Строгий поиск дал мало результатов. Дополняю общим.")
                 
@@ -94,7 +109,7 @@ class YouTubeDownloader:
                 
                 current_ids = {r.identifier for r in results}
                 for e in fallback_entries:
-                    if e.get('id') not in current_ids and filter_entry(e):
+                    if e.get('id') not in current_ids and active_filter(e):
                         results.append(TrackInfo.from_yt_info(e))
 
             logger.info(f"[Search] Финальный результат: {len(results)} треков.")
