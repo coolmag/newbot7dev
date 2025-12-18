@@ -21,6 +21,15 @@ class YouTubeDownloader:
         self._cache = cache_service
         self.semaphore = asyncio.Semaphore(3)
 
+    def _progress_hook(self, d: Dict[str, Any]):
+        """Progress hook to terminate download if file size exceeds the limit."""
+        logger.info(f"YTDLP_HOOK_DEBUG: {d}")
+        if d['status'] == 'downloading':
+            total_bytes_estimate = d.get('total_bytes') or d.get('total_bytes_estimate')
+            if total_bytes_estimate and total_bytes_estimate > (self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024):
+                # This exception will be caught by yt-dlp and will stop the download process.
+                raise yt_dlp.utils.DownloadError(f"File size estimate ({total_bytes_estimate / (1024*1024):.1f}MB) exceeds the limit of {self._settings.PLAY_MAX_FILE_SIZE_MB}MB.")
+
     def _get_opts(self, mode: str = "download") -> Dict[str, Any]:
         opts: Dict[str, Any] = {
             "quiet": True, "no_progress": True, "logger": None, "no_warnings": True, "noplaylist": True, "socket_timeout": 15,
@@ -40,6 +49,7 @@ class YouTubeDownloader:
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
                 "writeinfojson": True,
+                "progress_hooks": [self._progress_hook], # Real-time download monitor
             })
         return opts
 
@@ -129,31 +139,27 @@ class YouTubeDownloader:
             elif cached: await self._cache.delete(cache_key)
 
             video_url = f"https://www.youtube.com/watch?v={video_id}"
-            info = await self._extract_info(video_url, self._get_opts("search"))
             
-            # --- Robust Pre-download Checks ---
-            max_size_bytes = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
-            
-            # Check duration again as a last line of defense
-            track_info_from_download = TrackInfo.from_yt_info(info)
+            # --- Pre-download Duration Check (as a preliminary filter) ---
+            info_for_check = await self._extract_info(video_url, self._get_opts("search"))
+            track_info_from_download = TrackInfo.from_yt_info(info_for_check)
             if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
                 return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
-
-            filesize = info.get('filesize_approx') or info.get('filesize')
-            if filesize and filesize > max_size_bytes:
-                return DownloadResult(success=False, error=f"Файл слишком большой ({filesize/(1024*1024):.1f}MB)")
-            # --- End Pre-download Checks ---
+            # --- End Pre-download Check ---
 
             loop = asyncio.get_running_loop()
-            download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(self._get_opts("download")).download([video_url]))
+            download_opts = self._get_opts("download")
+            download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(download_opts).download([video_url]))
             await asyncio.wait_for(download_task, timeout=float(self._settings.DOWNLOAD_TIMEOUT_S))
 
             final_path = self._find_downloaded_file(video_id)
-            if not final_path or Path(final_path).stat().st_size > max_size_bytes:
-                if final_path: Path(final_path).unlink(missing_ok=True)
+            if not final_path:
+                 return DownloadResult(success=False, error="Файл не был создан после скачивания.")
+            if Path(final_path).stat().st_size > (self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024):
+                Path(final_path).unlink(missing_ok=True)
                 return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
 
-            result = DownloadResult(True, str(final_path), TrackInfo.from_yt_info(info))
+            result = DownloadResult(True, str(final_path), track_info_from_download)
             await self._cache.set(cache_key, Source.YOUTUBE, result)
             return result
         except asyncio.TimeoutError:
