@@ -1,11 +1,7 @@
 <div align="center">
 
 # 🌐 CYBER RADIO NETWORK v7.0
-/ / / / ___ __/ __ _ _____/ ()_ /___ /
-/ / / / / / __ / _ / / // / __ `/ __ / / __ \ / /
-/ // // / // / __/ / / , / // / // / / // / / /
-_/_, /./_// // ||_,/_,//_/ //
-/____/
+
 
      ⚡ NEURAL AUDIO EXTRACTION SYSTEM ⚡
           « BREACH THE SILENCE »
