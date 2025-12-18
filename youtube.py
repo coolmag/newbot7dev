@@ -13,6 +13,18 @@ from cache import CacheService
 
 logger = logging.getLogger(__name__)
 
+class SilentLogger:
+    """A silent logger that discards all messages."""
+    def debug(self, msg):
+        # For compatibility, yt-dlp expects these methods.
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
@@ -21,20 +33,18 @@ class YouTubeDownloader:
         self._cache = cache_service
         self.semaphore = asyncio.Semaphore(3)
 
-    def _progress_hook(self, d: Dict[str, Any]):
-        """Progress hook to terminate download if file size exceeds the limit."""
-        logger.info(f"YTDLP_HOOK_DEBUG: {d}")
-        if d['status'] == 'downloading':
-            total_bytes_estimate = d.get('total_bytes') or d.get('total_bytes_estimate')
-            if total_bytes_estimate and total_bytes_estimate > (self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024):
-                # This exception will be caught by yt-dlp and will stop the download process.
-                raise yt_dlp.utils.DownloadError(f"File size estimate ({total_bytes_estimate / (1024*1024):.1f}MB) exceeds the limit of {self._settings.PLAY_MAX_FILE_SIZE_MB}MB.")
-
     def _get_opts(self, mode: str = "download") -> Dict[str, Any]:
         opts: Dict[str, Any] = {
-            "quiet": True, "no_progress": True, "logger": None, "no_warnings": True, "noplaylist": True, "socket_timeout": 15,
-            "source_address": "0.0.0.0", "no_check_certificate": True, "geo_bypass": True,
+            "quiet": True,
+            "no_progress": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "socket_timeout": 15,
+            "source_address": "0.0.0.0",
+            "no_check_certificate": True,
+            "geo_bypass": True,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "logger": SilentLogger(),  # Use the silent logger
         }
         
         # Add cookie support to prevent "Sign in to confirm you're not a bot" errors
@@ -49,7 +59,7 @@ class YouTubeDownloader:
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
                 "writeinfojson": True,
-                "progress_hooks": [self._progress_hook], # Real-time download monitor
+                "max_filesize": self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024,
             })
         return opts
 
