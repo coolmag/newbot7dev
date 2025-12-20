@@ -4,6 +4,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 from typing import Optional, Set, Dict, List, TYPE_CHECKING
+from dataclasses import dataclass, field # Added dataclass and field import
 
 from telegram import Bot
 from telegram.constants import ParseMode
