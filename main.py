@@ -225,11 +225,30 @@ async def get_player_playlist(
     if not tracks:
         return {"playlist": []}
 
-    # Removed: Blocking download for the FIRST track.
-    # Now, all tracks are downloaded in the background.
-    background_tasks.add_task(download_playlist_in_background, downloader, tracks)
+    # Block and wait for the FIRST track to ensure playback starts immediately
+    first_track = tracks[0]
+    try:
+        logger.info(f"Starting blocking download for the first track: {first_track.identifier}")
+        result = await downloader.download(first_track.identifier)
+        if not result.success:
+            logger.error(f"Failed to download the first track {first_track.identifier}: {result.error}")
+            raise HTTPException(status_code=500, detail=f"Failed to process first track: {result.error}")
 
-    # Format and return the full playlist immediately
+        logger.info(f"First track {first_track.identifier} downloaded successfully.")
+    except Exception as e:
+        logger.error(
+            f"Failed to download the first track {first_track.identifier}: {e}. Playlist might fail.",
+            exc_info=True
+        )
+        # Re-raise as HTTPException to inform the client
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Download the rest of the tracks in the background
+    remaining_tracks = tracks[1:]
+    if remaining_tracks:
+        background_tasks.add_task(download_playlist_in_background, downloader, remaining_tracks)
+
+    # Format and return the full playlist
     playlist = [
         {
             "title": track.title, "artist": track.artist, "duration": track.duration,
