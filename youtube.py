@@ -87,7 +87,10 @@ class YouTubeDownloader:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
         
         try:
-            is_genre_query = len(query.split()) <= 3
+            is_genre_query = (
+                len(query.split()) <= 3
+                or any(keyword in query.lower() for keyword in ['mix', 'playlist', 'beats', 'radio', 'study', 'chill', 'ambient', 'instrumental'])
+            )
             
             def filter_entry(entry: Dict[str, Any]) -> bool:
                 """Unified filter for YouTube search results."""
