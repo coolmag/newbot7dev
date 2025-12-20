@@ -15,9 +15,10 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError, BadRequest
 
 from config import Settings
-from models import TrackInfo, VoteCallback
+from models import TrackInfo
 from youtube import YouTubeDownloader
-from keyboards import get_dashboard_keyboard, get_track_keyboard, get_genre_voting_keyboard
+from keyboards import get_dashboard_keyboard, get_track_keyboard
+from radio_voting import GenreVotingService # Import the new service
 
 logger = logging.getLogger("radio")
 
@@ -49,22 +50,17 @@ class RadioSession:
     fails_in_row: int = 0
     dashboard_msg_id: Optional[int] = None
     
-    # --- Voting & Mode attributes ported from v5 ---
+    # --- Mode attributes ---
     mode_end_time: Optional[datetime] = None
     winning_genre: Optional[str] = None
 
-    is_vote_in_progress: bool = False
-    votes: Dict[str, Set[int]] = field(default_factory=dict)
-    current_vote_genres: List[str] = field(default_factory=list)
-    vote_message_id: Optional[int] = None
-    vote_task: Optional[asyncio.Task] = None
-
 
 class RadioManager:
-    def __init__(self, bot: Bot, settings: Settings, downloader: YouTubeDownloader):
+    def __init__(self, bot: Bot, settings: Settings, downloader: YouTubeDownloader, voting_service: GenreVotingService):
         self._bot = bot
         self._settings = settings
         self._downloader = downloader
+        self._voting_service = voting_service
         self._sessions: Dict[int, RadioSession] = {}
 
     def _get_random_style_query(self, s: RadioSession) -> str:
@@ -88,7 +84,6 @@ class RadioManager:
         return base_genre_key # Fallback to the main key as a search term
 
     def status(self) -> dict:
-        # ... (no changes needed here)
         data = {}
         for chat_id, s in self._sessions.items():
             current_info = None
@@ -100,15 +95,19 @@ class RadioManager:
                     "identifier": s.current.identifier,
                     "audio_url": f"{self._settings.BASE_URL}/audio/{s.current.identifier}",
                 }
+            
+            voting_session = self._voting_service.get_session(chat_id)
+            is_vote_in_progress = voting_session.is_vote_in_progress if voting_session else False
+
             data[str(chat_id)] = {
                 "chat_id": chat_id, "query": s.query, "current": current_info,
                 "playlist_len": len(s.playlist), "is_active": not s.stop_event.is_set(),
-                "winning_genre": s.winning_genre
+                "winning_genre": s.winning_genre,
+                "is_vote_in_progress": is_vote_in_progress
             }
         return {"sessions": data}
 
     async def start(self, chat_id: int, query: str, chat_type: str, message_id: Optional[int] = None, display_name: Optional[str] = None):
-        # ... (logic to start a session)
         await self.stop(chat_id)
         session = RadioSession(
             chat_id=chat_id, 
@@ -118,8 +117,7 @@ class RadioManager:
         )
         self._sessions[chat_id] = session
         
-        # Set initial mode end time to trigger first vote
-        session.mode_end_time = datetime.now() + timedelta(minutes=1)
+        # Initial mode_end_time will be set by _radio_loop after the first vote.
 
         if message_id:
             session.dashboard_msg_id = message_id
@@ -132,11 +130,12 @@ class RadioManager:
         logger.info(f"[{chat_id}] Радио запущено: {query}")
 
     async def stop(self, chat_id: int):
-        # ... (stop logic now also needs to cancel vote task)
         if session := self._sessions.pop(chat_id, None):
             session.stop_event.set()
             if session.preload_task: session.preload_task.cancel()
-            if session.vote_task: session.vote_task.cancel()
+            
+            # End any active voting session for this chat
+            await self._voting_service.end_voting_session(chat_id)
             
             paths_to_delete = [session.next_file_path, session.current_file_path]
             for p_str in paths_to_delete:
@@ -146,108 +145,14 @@ class RadioManager:
             
             await self._update_dashboard(session, status="🛑 Эфир завершен")
 
-    # ... (stop_all and skip methods remain the same) ...
     async def stop_all(self):
         for chat_id in list(self._sessions.keys()): await self.stop(chat_id)
+        await self._voting_service.stop_all_votings()
 
     async def skip(self, chat_id: int):
         if session := self._sessions.get(chat_id):
             session.skip_event.set()
             await self._update_dashboard(session, status="⏭️ Переключение...")
-
-    # --- Voting Logic ---
-    async def _run_vote_lifecycle(self, s: RadioSession):
-        if s.is_vote_in_progress: return
-
-        logger.info(f"[{s.chat_id}] Начинается голосование за жанр.")
-        s.is_vote_in_progress = True
-        s.votes = {}
-        
-        all_genres = list(self._settings.GENRE_DATA.keys())
-        sample_size = min(len(all_genres), 6) # 6 genres to vote for
-        s.current_vote_genres = sorted(random.sample(all_genres, sample_size))
-
-        try:
-            vote_msg = await self._bot.send_message(
-                chat_id=s.chat_id,
-                text="📢 **Началось голосование за жанр!**\n\nВыберите, что будет играть следующий час. Голосование продлится 3 минуты.",
-                reply_markup=get_genre_voting_keyboard(s.current_vote_genres, s.votes),
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            s.vote_message_id = vote_msg.message_id
-        except Exception as e:
-            logger.error(f"Не удалось отправить сообщение для голосования: {e}")
-            s.is_vote_in_progress = False
-            return
-
-        await asyncio.sleep(180)  # 3 minutes for voting
-        if s.is_vote_in_progress:
-            await self.end_genre_vote(s)
-
-    def start_genre_vote(self, s: RadioSession):
-        if s.vote_task and not s.vote_task.done():
-            logger.warning(f"[{s.chat_id}] Попытка запустить голосование, когда оно уже идет.")
-            return
-        s.vote_task = asyncio.create_task(self._run_vote_lifecycle(s))
-
-    async def register_vote(self, chat_id: int, genre_key: str, user_id: int) -> bool:
-        session = self._sessions.get(chat_id)
-        if not session or not session.is_vote_in_progress:
-            return False
-        
-        # Allow user to change their vote
-        for g in session.votes:
-            session.votes[g].discard(user_id)
-            
-        if genre_key not in session.votes:
-            session.votes[genre_key] = set()
-        session.votes[genre_key].add(user_id)
-        
-        logger.debug(f"[{chat_id}] Пользователь {user_id} проголосовал за {genre_key}.")
-        await self._update_vote_keyboard(session)
-        return True
-
-    async def _update_vote_keyboard(self, s: RadioSession):
-        if not s.is_vote_in_progress or not s.vote_message_id: return
-        try:
-            await self._bot.edit_message_reply_markup(
-                chat_id=s.chat_id, message_id=s.vote_message_id,
-                reply_markup=get_genre_voting_keyboard(s.current_vote_genres, s.votes)
-            )
-        except TelegramError: pass # Ignore "not modified" errors
-
-    async def end_genre_vote(self, s: RadioSession):
-        if not s.vote_message_id: return
-
-        logger.info(f"[{s.chat_id}] Голосование завершено. Подвожу итоги.")
-        
-        if s.votes:
-            winner = max(s.votes, key=lambda g: len(s.votes[g]))
-            s.winning_genre = winner
-        else:
-            s.winning_genre = random.choice(s.current_vote_genres)
-        
-        s.mode_end_time = datetime.now() + timedelta(minutes=60)
-        s.playlist.clear()
-        s.fails_in_row = 0
-        s.query = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre)
-        s.display_name = s.query
-        
-        winner_name = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre.capitalize())
-        announcement = f"🎉 **Голосование завершено!**\n\nСледующий час играет: **{winner_name}**"
-        
-        try:
-            await self._bot.edit_message_text(
-                chat_id=s.chat_id, message_id=s.vote_message_id,
-                text=announcement, parse_mode=ParseMode.MARKDOWN, reply_markup=None
-            )
-        except TelegramError as e:
-            logger.warning(f"Не удалось обновить сообщение о голосовании: {e}")
-
-        s.vote_message_id = None
-        s.is_vote_in_progress = False
-        s.vote_task = None
-        s.skip_event.set() # Skip current track to start the new genre
 
     # --- Main Radio Loop ---
     async def _radio_loop(self, s: RadioSession):
@@ -255,9 +160,22 @@ class RadioManager:
             while not s.stop_event.is_set():
                 s.skip_event.clear()
 
-                # Check if it's time to start a new vote
-                if not s.is_vote_in_progress and (s.mode_end_time is None or datetime.now() >= s.mode_end_time):
-                    self.start_genre_vote(s)
+                # Check if it's time for a vote or current genre block has ended
+                if s.mode_end_time is None or datetime.now() >= s.mode_end_time:
+                    # End any pending vote for this chat, retrieve winner
+                    winning_genre_from_vote = await self._voting_service.end_voting(s.chat_id)
+                    if winning_genre_from_vote:
+                        s.winning_genre = winning_genre_from_vote
+                        s.mode_end_time = datetime.now() + timedelta(minutes=60) # Set new 60-minute block
+                        s.playlist.clear() # Clear playlist for new genre
+                        s.fails_in_row = 0
+                        # Update query and display name based on new winning genre
+                        s.query = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre)
+                        s.display_name = s.query
+                        s.skip_event.set() # Skip current track to start the new genre immediately
+
+                    # Start a new vote cycle for the *next* genre (it will replace existing vote message if exists)
+                    await self._voting_service.start_new_voting_cycle(s.chat_id, message_id=s.dashboard_msg_id)
                 
                 if len(s.playlist) < 5:
                     current_query = s.query
@@ -276,7 +194,6 @@ class RadioManager:
                         continue
                     s.fails_in_row = 0
                 
-                # ... (rest of the loop is similar to before) ...
                 if not s.playlist:
                     await self._send_error_message(s.chat_id, "Плейлист пуст, не могу продолжить.")
                     await asyncio.sleep(10)

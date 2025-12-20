@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 from functools import lru_cache
 
-from pydantic import BaseSettings, validator, root_validator
+from pydantic import Field, model_validator, field_validator # Updated Pydantic imports
+from pydantic_settings import BaseSettings, SettingsConfigDict # New import for BaseSettings
 
 class Settings(BaseSettings):
     # --- Basic Settings from .env ---
@@ -47,10 +48,11 @@ class Settings(BaseSettings):
     
     PLAY_MAX_FILE_SIZE_MB: int = 20
 
-    @validator("ADMIN_ID_LIST", pre=True, always=True)
-    def _assemble_admin_ids(cls, v, values) -> List[int]:
+    @field_validator("ADMIN_ID_LIST", mode="before") # Updated to field_validator
+    @classmethod
+    def _assemble_admin_ids(cls, v, info) -> List[int]: # Signature changed for Pydantic v2
         """Parses the ADMIN_IDS string from environment into a list of integers."""
-        admin_ids_str = values.get("ADMIN_IDS", "")
+        admin_ids_str = info.data.get("ADMIN_IDS", "") # Access via info.data
         if not admin_ids_str:
             return []
         try:
@@ -58,10 +60,10 @@ class Settings(BaseSettings):
         except ValueError as e:
             raise ValueError(f"Invalid ADMIN_IDS format. Could not parse '{admin_ids_str}'. Must be a comma-separated list of numbers.") from e
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def _load_genre_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode='after') # Updated to model_validator
+    def _load_genre_data(self) -> "Settings": # Signature changed for Pydantic v2
         """Loads genre data from genres.json, failing fast if the file is missing or invalid."""
-        base_dir = values.get("BASE_DIR")
+        base_dir = self.BASE_DIR # Access via self
         if not base_dir:
             # This should not happen if BASE_DIR has its default value
             raise ValueError("BASE_DIR is not set, cannot locate genres.json")
@@ -75,16 +77,13 @@ class Settings(BaseSettings):
         
         try:
             with open(genres_path, "r", encoding="utf-8") as f:
-                values["GENRE_DATA"] = json.load(f)
+                self.GENRE_DATA = json.load(f) # Update self.GENRE_DATA
         except json.JSONDecodeError as e:
             raise ValueError(f"Error decoding JSON from {genres_path}: {e}") from e
         
-        return values
+        return self
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore") # New way to define Config
 
 @lru_cache()
 def get_settings() -> Settings:

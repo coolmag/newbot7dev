@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from pydantic import BaseModel, ConfigDict, Field # Added ConfigDict, Field
 
 class Source(str, Enum):
     """Перечисление доступных источников музыки."""
@@ -9,9 +9,7 @@ class Source(str, Enum):
     YOUTUBE_MUSIC = "YouTube Music"
     INTERNET_ARCHIVE = "Internet Archive"
 
-
-@dataclass
-class DownloadResult:
+class DownloadResult(BaseModel):
     """
     Результат операции загрузки. Содержит либо информацию о треке, либо ошибку.
     """
@@ -20,21 +18,12 @@ class DownloadResult:
     track_info: Optional["TrackInfo"] = None
     error: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        """Сериализует объект в словарь для сохранения в JSON."""
-        return {
-            "success": self.success,
-            "file_path": self.file_path,
-            "track_info": self.track_info.__dict__ if self.track_info else None,
-            "error": self.error,
-        }
-
-@dataclass(frozen=True)
-class TrackInfo:
+class TrackInfo(BaseModel): # Changed from @dataclass(frozen=True)
     """
     Структура для хранения информации о треке.
-    `frozen=True` делает экземпляры класса неизменяемыми.
     """
+    model_config = ConfigDict(frozen=True) # Equivalent to frozen=True for dataclass
+
     title: str
     artist: str
     duration: int
@@ -55,10 +44,10 @@ class TrackInfo:
         minutes, seconds = divmod(self.duration, 60)
         return f"{minutes:02d}:{seconds:02d}"
 
-    @staticmethod
-    def from_yt_info(info: dict) -> "TrackInfo":
+    @classmethod # Changed from staticmethod to classmethod
+    def from_yt_info(cls, info: dict) -> "TrackInfo": # Use cls instead of hardcoded TrackInfo
         """Создает TrackInfo из словаря информации yt-dlp."""
-        return TrackInfo(
+        return cls( # Use cls() for instantiation
             title=info.get("title", "Unknown"),
             artist=info.get("channel", info.get("uploader", "Unknown")),
             duration=int(info.get("duration") or 0),

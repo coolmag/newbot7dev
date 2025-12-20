@@ -4,4 +4,5 @@ python-telegram-bot==21.9
 aiohttp==3.11.11
 aiosqlite==0.20.0
 yt-dlp
-pydantic==1.10.13
+pydantic>=2.0
+pydantic-settings>=2.0

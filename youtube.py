@@ -126,46 +126,48 @@ class YouTubeDownloader:
             return []
 
     async def download(self, video_id: str) -> DownloadResult:
-        try:
-            cache_key = f"yt:{video_id}"
-            cached = await self._cache.get(cache_key, Source.YOUTUBE)
-            if cached and Path(cached.file_path).exists(): return cached
-            elif cached: await self._cache.delete(cache_key)
+        # Acquire semaphore before starting the download process
+        async with self.semaphore:
+            try:
+                cache_key = f"yt:{video_id}"
+                cached = await self._cache.get(cache_key, Source.YOUTUBE)
+                if cached and Path(cached.file_path).exists(): return cached
+                elif cached: await self._cache.delete(cache_key)
 
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            
-            # --- Pre-download Duration Check (as a preliminary filter) ---
-            info_for_check = await self._extract_info(video_url, self._get_opts("search"))
-            track_info_from_download = TrackInfo.from_yt_info(info_for_check)
-            if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
-                return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
-            # --- End Pre-download Check ---
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                
+                # --- Pre-download Duration Check (as a preliminary filter) ---
+                info_for_check = await self._extract_info(video_url, self._get_opts("search"))
+                track_info_from_download = TrackInfo.from_yt_info(info_for_check)
+                if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
+                    return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
+                # --- End Pre-download Check ---
 
-            loop = asyncio.get_running_loop()
-            download_opts = self._get_opts("download")
-            download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(download_opts).download([video_url]))
-            await asyncio.wait_for(download_task, timeout=float(self._settings.DOWNLOAD_TIMEOUT_S))
+                loop = asyncio.get_running_loop()
+                download_opts = self._get_opts("download")
+                download_task = loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(download_opts).download([video_url]))
+                await asyncio.wait_for(download_task, timeout=float(self._settings.DOWNLOAD_TIMEOUT_S))
 
-            final_path = self._find_downloaded_file(video_id)
-            if not final_path:
-                 return DownloadResult(success=False, error="Файл не был создан после скачивания.")
-            if Path(final_path).stat().st_size > (self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024):
-                Path(final_path).unlink(missing_ok=True)
-                return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
+                final_path = self._find_downloaded_file(video_id)
+                if not final_path:
+                     return DownloadResult(success=False, error="Файл не был создан после скачивания.")
+                if Path(final_path).stat().st_size > (self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024):
+                    Path(final_path).unlink(missing_ok=True)
+                    return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
 
-            result = DownloadResult(True, str(final_path), track_info_from_download)
-            await self._cache.set(cache_key, Source.YOUTUBE, result)
-            return result
-        except asyncio.TimeoutError:
-            logger.error(f"Скачивание видео {video_id} превысило таймаут {self._settings.DOWNLOAD_TIMEOUT_S}с.")
-            # Попытка очистить частичные файлы
-            for partial_file in glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.*")):
-                try: Path(partial_file).unlink(missing_ok=True)
-                except OSError: pass
-            return DownloadResult(success=False, error="Превышен таймаут скачивания")
-        except Exception as e:
-            logger.error(f"Критическая ошибка скачивания: {e}", exc_info=True)
-            return DownloadResult(success=False, error=str(e))
+                result = DownloadResult(True, str(final_path), track_info_from_download)
+                await self._cache.set(cache_key, Source.YOUTUBE, result)
+                return result
+            except asyncio.TimeoutError:
+                logger.error(f"Скачивание видео {video_id} превысило таймаут {self._settings.DOWNLOAD_TIMEOUT_S}с.")
+                # Попытка очистить частичные файлы
+                for partial_file in glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.*")):
+                    try: Path(partial_file).unlink(missing_ok=True)
+                    except OSError: pass
+                return DownloadResult(success=False, error="Превышен таймаут скачивания")
+            except Exception as e:
+                logger.error(f"Критическая ошибка скачивания: {e}", exc_info=True)
+                return DownloadResult(success=False, error=str(e))
 
     async def download_with_retry(self, query: str) -> DownloadResult:
         for attempt in range(self._settings.MAX_RETRIES):

@@ -126,13 +126,8 @@ class CacheService:
                 row = await cursor.fetchone()
                 if not row: return None
                 
-                result_data = json.loads(row["result_json"])
-                return DownloadResult(
-                    success=result_data["success"],
-                    file_path=result_data["file_path"],
-                    track_info=TrackInfo(**result_data["track_info"]),
-                    error=result_data.get("error"),
-                )
+                # Use Pydantic v2 model_validate for deserialization
+                return DownloadResult.model_validate_json(row["result_json"])
         except Exception as e:
             logger.warning(f"Ошибка при чтении из кэша: {e}")
             return None
@@ -140,7 +135,8 @@ class CacheService:
     async def set(self, query: str, source: Source, result: DownloadResult):
         if not self._is_initialized or not result.success or not result.track_info: return
         cache_id = self._get_cache_id(query, source)
-        result_json = json.dumps(result.to_dict())
+        # Use Pydantic v2 model_dump_json for serialization
+        result_json = result.model_dump_json()
         try:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("INSERT OR REPLACE INTO cache (id, query, source, result_json) VALUES (?, ?, ?, ?)",
@@ -314,19 +310,42 @@ class CacheService:
             await asyncio.sleep(3600)  # Каждый час
             try:
                 async with aiosqlite.connect(self._db_path) as db:
-                    # Очистка кэша загрузок
+                    # --- Очистка кэша загрузок ---
+                    # 1. Сначала получаем пути к файлам, которые будут удалены
+                    cursor = await db.execute(
+                        "SELECT result_json FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
+                        (self._ttl,),
+                    )
+                    rows_to_delete = await cursor.fetchall()
+                    
+                    deleted_file_count = 0
+                    for row in rows_to_delete:
+                        try:
+                            result_data = json.loads(row[0]) # result_json is the first column
+                            file_path = result_data.get("file_path")
+                            if file_path:
+                                p = Path(file_path)
+                                if p.exists():
+                                    p.unlink()
+                                    deleted_file_count += 1
+                        except (json.JSONDecodeError, KeyError, OSError) as e:
+                            logger.warning(f"Ошибка при удалении кэшированного файла {file_path}: {e}")
+                    
+                    # 2. Затем удаляем записи из базы данных
                     cursor_cache = await db.execute(
                         "DELETE FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
                         (self._ttl,),
                     )
-                    # Очистка черного списка
+
+                    # --- Очистка черного списка ---
                     cursor_blacklisted = await db.execute(
                         "DELETE FROM blacklisted WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
                         (self._ttl,),
                     )
                     await db.commit()
+                    
                     if cursor_cache.rowcount > 0:
-                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок.")
+                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок. Удалено файлов: {deleted_file_count}.")
                     if cursor_blacklisted.rowcount > 0:
                         logger.info(f"{cursor_blacklisted.rowcount} устаревших записей удалено из черного списка.")
             except Exception as e:

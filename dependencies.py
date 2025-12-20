@@ -1,11 +1,13 @@
 from functools import lru_cache
 
 from telegram.ext import Application
+from telegram import Bot
 
 from config import get_settings, Settings
 from cache import CacheService
 from youtube import YouTubeDownloader
 from radio import RadioManager
+from radio_voting import GenreVotingService # Import the new service
 
 # By using lru_cache, we ensure that each of these functions is executed only once,
 # creating a single instance of each service (singleton pattern).
@@ -39,10 +41,19 @@ def get_telegram_app_dep() -> Application:
     )
 
 @lru_cache()
+def get_genre_voting_service_dep() -> GenreVotingService:
+    """Dependency to get the GenreVotingService."""
+    return GenreVotingService(
+        bot=get_telegram_app_dep().bot,
+        settings=get_settings_dep()
+    )
+
+@lru_cache()
 def get_radio_manager_dep() -> RadioManager:
     """Dependency to get the RadioManager."""
     return RadioManager(
         bot=get_telegram_app_dep().bot,
         settings=get_settings_dep(),
-        downloader=get_downloader_dep()
+        downloader=get_downloader_dep(),
+        voting_service=get_genre_voting_service_dep()
     )
