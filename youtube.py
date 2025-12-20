@@ -3,6 +3,7 @@ import asyncio
 import glob
 import logging
 import re
+import random # Added this import
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -112,20 +113,42 @@ class YouTubeDownloader:
                 
                 return True
 
-            # Use a single, broader search and filter results in Python.
-            # Crucially, always filter out live streams at the yt-dlp level.
-            search_query = f"ytsearch{limit}:{query}"
             opts = self._get_opts("search")
             opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
             
-            info = await self._extract_info(search_query, opts)
-            entries = info.get("entries", []) or []
+            final_results = []
+            
+            if is_genre_query:
+                # Themed Query strategy for genres
+                logger.info(f"[Search] Жанровый запрос, используется стратегия тематических запросов.")
+                THEMES = ["mix", "playlist", "compilation", "hits", "radio"]
+                random.shuffle(THEMES)
+                
+                themed_queries = [f"{query} {theme}" for theme in THEMES]
+                themed_queries.append(query) # Add the raw query as a final fallback
 
-            # Process and filter the results
-            results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+                for themed_query in themed_queries:
+                    search_query = f"ytsearch{limit}:{themed_query}"
+                    info = await self._extract_info(search_query, opts)
+                    entries = info.get("entries", []) or []
+                    
+                    processed_entries = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+                    if processed_entries:
+                        final_results.extend(processed_entries)
+                    
+                    # If we found a good number of tracks, we can stop searching.
+                    if len(final_results) >= 10:
+                        logger.info(f"[Search] Найдено достаточно треков ({len(final_results)}) с запросом '{themed_query}'.")
+                        break
+            else:
+                # Standard search for specific track/artist queries
+                search_query = f"ytsearch{limit}:{query}"
+                info = await self._extract_info(search_query, opts)
+                entries = info.get("entries", []) or []
+                final_results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
 
-            logger.info(f"[Search] Найдено и отфильтровано: {len(results)} треков.")
-            return results[:limit]
+            logger.info(f"[Search] Найдено и отфильтровано: {len(final_results)} треков.")
+            return final_results[:limit]
 
         except Exception as e:
             logger.error(f"[Search] Критическая ошибка: {e}", exc_info=True)
@@ -161,7 +184,7 @@ class YouTubeDownloader:
                     Path(final_path).unlink(missing_ok=True)
                     return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
 
-                return DownloadResult(success=True, file_path=str(final_path), track_info=track_info_from_download)
+                result = DownloadResult(success=True, file_path=str(final_path), track_info=track_info_from_download)
                 await self._cache.set(cache_key, Source.YOUTUBE, result)
                 return result
             except asyncio.TimeoutError:
