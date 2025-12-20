@@ -161,7 +161,7 @@ class YouTubeDownloader:
                     Path(final_path).unlink(missing_ok=True)
                     return DownloadResult(success=False, error="Финальный файл превысил лимит размера")
 
-                result = DownloadResult(True, str(final_path), track_info_from_download)
+                return DownloadResult(success=True, file_path=str(final_path), track_info=track_info_from_download)
                 await self._cache.set(cache_key, Source.YOUTUBE, result)
                 return result
             except asyncio.TimeoutError:
