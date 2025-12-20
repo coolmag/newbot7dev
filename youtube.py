@@ -55,9 +55,14 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "format": "bestaudio[ext=m4a]/bestaudio", # Prioritize M4A, fallback to best audio
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                # "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}], # REMOVED to prevent re-encoding
+                # Re-introduce postprocessor to handle cases where the best audio is not M4A (e.g., opus/iamf)
+                # This ensures a standard, playable format.
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "m4a",
+                }],
                 "writeinfojson": True,
                 "max_filesize": self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024,
             })
@@ -68,9 +73,10 @@ class YouTubeDownloader:
         return await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=False))
 
     def _find_downloaded_file(self, video_id: str) -> Optional[str]:
-        """Finds the downloaded audio file, checking for common audio extensions."""
+        """Finds the downloaded audio file, checking for common audio extensions, prioritizing m4a."""
         base_path = self._settings.DOWNLOADS_DIR / video_id
-        for ext in ["m4a", "webm", "opus", "mp3"]: # Check for most common formats
+        # Prioritize m4a as it's our preferred output format from the post-processor
+        for ext in ["m4a", "mp3", "webm", "opus"]: 
             file_path = base_path.with_suffix(f".{ext}")
             if file_path.exists():
                 return str(file_path)
@@ -168,15 +174,3 @@ class YouTubeDownloader:
             except Exception as e:
                 logger.error(f"Критическая ошибка скачивания: {e}", exc_info=True)
                 return DownloadResult(success=False, error=str(e))
-
-    async def download_with_retry(self, query: str) -> DownloadResult:
-        for attempt in range(self._settings.MAX_RETRIES):
-            try:
-                result = await self.download(query)
-                if result.success: return result
-                if "слишком большой" in (result.error or ""): return result
-            except Exception as e:
-                logger.error(f"[Downloader] Попытка {attempt+1}: {e}")
-            if attempt < self._settings.MAX_RETRIES - 1:
-                await asyncio.sleep(self._settings.RETRY_DELAY_S)
-        return DownloadResult(success=False, error="Не удалось скачать.")
