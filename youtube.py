@@ -57,7 +57,7 @@ class YouTubeDownloader:
             opts.update({
                 "format": "bestaudio[ext=m4a]/bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+                # "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}], # REMOVED to prevent re-encoding
                 "writeinfojson": True,
                 "max_filesize": self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024,
             })
@@ -68,9 +68,13 @@ class YouTubeDownloader:
         return await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=False))
 
     def _find_downloaded_file(self, video_id: str) -> Optional[str]:
-        pattern = str(self._settings.DOWNLOADS_DIR / f"{video_id}.mp3")
-        files = glob.glob(pattern)
-        return files[0] if files else None
+        """Finds the downloaded audio file, checking for common audio extensions."""
+        base_path = self._settings.DOWNLOADS_DIR / video_id
+        for ext in ["m4a", "webm", "opus", "mp3"]: # Check for most common formats
+            file_path = base_path.with_suffix(f".{ext}")
+            if file_path.exists():
+                return str(file_path)
+        return None
 
     async def search(self, query: str, limit: int = 30, **kwargs) -> List[TrackInfo]:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
