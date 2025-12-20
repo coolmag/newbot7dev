@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.requests import ClientDisconnect # Added this line
 
 from telegram import Update
 from telegram.ext import Application
@@ -254,6 +255,9 @@ async def webhook(
         data = await req.json()
         update = Update.de_json(data, tg_app.bot)
         await tg_app.process_update(update)
+    except ClientDisconnect:
+        logger.warning("Client disconnected prematurely during webhook processing.")
+        return {"ok": True}
     except Exception as e:
         body = await req.body()
         logger.error(
