@@ -206,7 +206,7 @@ class RadioManager:
                 else:
                     track = s.playlist.popleft()
                     await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title[:35]}...")
-                    result = await self._downloader.download_with_retry(track.identifier)
+                    result = await self._downloader.download(track.identifier)
                     if not result.success:
                         logger.warning(f"[{s.chat_id}] Ошибка скачивания: {result.error}")
                         continue
@@ -247,7 +247,7 @@ class RadioManager:
             if not s.playlist: return
             track = s.playlist[0]
             logger.info(f"[{s.chat_id}] Предзагрузка: {track.title}")
-            result = await self._downloader.download_with_retry(track.identifier)
+            result = await self._downloader.download(track.identifier)
             if result.success:
                 s.next_file_path, s.next_track_info = result.file_path, result.track_info
                 logger.info(f"[{s.chat_id}] Предзагрузка завершена: {track.title}")
