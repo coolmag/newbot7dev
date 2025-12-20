@@ -55,10 +55,10 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio[ext=m4a]/bestaudio", # Prioritize M4A, fallback to best audio
+                "format": "bestaudio/best", # Always get the best audio, regardless of its original container
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                # Re-introduce postprocessor to handle cases where the best audio is not M4A (e.g., opus/iamf)
-                # This ensures a standard, playable format.
+                # Unconditionally re-encode to M4A to ensure a standard, playable format.
+                # This handles new/unsupported codecs like 'iamf' gracefully.
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "m4a",
