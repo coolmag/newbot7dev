@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from starlette.requests import ClientDisconnect # Added this line
+from starlette.requests import ClientDisconnect
 
 from telegram import Update
 from telegram.ext import Application
@@ -29,7 +29,7 @@ from dependencies import (
     get_downloader_dep,
     get_telegram_app_dep,
     get_radio_manager_dep,
-    get_genre_voting_service_dep, # Added this import
+    get_genre_voting_service_dep,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
     tg_app = get_telegram_app_dep()
     radio = get_radio_manager_dep()
     downloader = get_downloader_dep()
-    voting_service = get_genre_voting_service_dep() # Added this line
+    voting_service = get_genre_voting_service_dep()
 
     # Start the keep-alive task
     keep_alive = asyncio.create_task(keep_alive_task(settings.BASE_URL))
@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
     await cache.initialize()
     
     # Set up Telegram handlers and start the bot
-    setup_handlers(tg_app, radio, settings, downloader, voting_service) # Passed voting_service here
+    setup_handlers(tg_app, radio, settings, downloader, voting_service)
     await tg_app.initialize()
     await tg_app.start()
     
@@ -108,118 +108,7 @@ async def lifespan(app: FastAPI):
             ("start", "🚀 Start/Menu"),
             ("play", "🎵 Найти трек"),
             ("artist", "🎤 Радио по артисту"),
-            ("radio", "📻 Start Radio (Admin)"),
-            ("stop", "⏹️ Стоп"),
-            ("skip", "⏭️ Пропустить"),
-            ("vote", "🗳️ Показать голосование"),
-        ])
-    except Exception as e: 
-        logger.warning(f"Could not set bot commands: {e}")
-
-    webhook_url = settings.WEBHOOK_URL.rstrip('/')
-    if not webhook_url.endswith('/telegram'):
-        webhook_url += '/telegram'
-
-    await tg_app.bot.set_webhook(url=webhook_url)
-    logger.info(f"✅ Bot started. Webhook set to {webhook_url}")
-
-    yield
-
-    # --- Shutdown ---
-    logger.info("Application shutting down...")
-    
-    # Gracefully stop the keep-alive task
-    logger.info("[Keep-Alive] Stopping keep-alive task...")
-    keep_alive.cancel()
-    try:
-        await keep_alive
-    except asyncio.CancelledError:
-        logger.info("[Keep-Alive] Task successfully cancelled.")
-
-    try: 
-        await get_radio_manager_dep().stop_all()
-    except Exception as e: 
-        logger.warning(f"Error during radio stop: {e}")
-    
-    await get_telegram_app_dep().stop()
-    await get_telegram_app_dep().shutdown()
-    await get_cache_service_dep().close()
-    logger.info("Application shutdown complete.")
-
-def audio_mime_for(path: Path) -> str:
-    """Guess the MIME type for a given audio file path."""
-    ext = path.suffix.lower()
-    if ext == ".mp3": return "audio/mpeg"
-    if ext in (".m4a", ".mp4"): return "audio/mp4"
-    if ext in (".webm", ".opus", ".ogg"): return "audio/webm"
-    mime, _ = mimetypes.guess_type(str(path))
-    return mime or "application/octet-stream"
-
-async def download_playlist_in_background(
-    downloader: YouTubeDownloader, tracks: list[TrackInfo]
-):
-    """Download a list of tracks in the background without blocking."""
-    logger.info(f"Starting background download for {len(tracks)} tracks.")
-    for track in tracks:
-        try:
-            asyncio.create_task(downloader.download(track.identifier))
-        except Exception as e:
-            logger.error(f"Error starting background download task for {track.identifier}: {e}")
-
-async def keep_alive_task(base_url: str):
-    """A background task to prevent the service from sleeping."""
-    health_url = f"{base_url.rstrip('/')}/health"
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.get(health_url, timeout=10)
-            logger.info("[Keep-Alive] Ping successful.")
-        except httpx.RequestError as e:
-            logger.warning(f"[Keep-Alive] Ping failed: {e}")
-        except Exception as e:
-            logger.error(f"[Keep-Alive] An unexpected error occurred: {e}", exc_info=True)
-        
-        await asyncio.sleep(240) # Sleep for 4 minutes
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Application lifespan context. Handles startup and shutdown events,
-    initializing and cleaning up resources.
-    """
-    # --- Startup ---
-    setup_logging()
-    logger.info("Application starting up...")
-
-    # Get singleton instances via dependency functions to "prime the pump"
-    settings = get_settings_dep()
-    cache = get_cache_service_dep()
-    tg_app = get_telegram_app_dep()
-    radio = get_radio_manager_dep()
-    downloader = get_downloader_dep()
-
-    # Start the keep-alive task
-    keep_alive = asyncio.create_task(keep_alive_task(settings.BASE_URL))
-
-    # Create necessary directories and files from settings
-    settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    if settings.COOKIES_CONTENT:
-        settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
-
-    # Initialize services that require async setup
-    await cache.initialize()
-    
-    # Set up Telegram handlers and start the bot
-    setup_handlers(tg_app, radio, settings, downloader)
-    await tg_app.initialize()
-    await tg_app.start()
-    
-    try:
-        await tg_app.bot.set_my_commands([
-            ("start", "🚀 Start/Menu"),
-            ("play", "🎵 Найти трек"),
-            ("artist", "🎤 Радио по артисту"),
-            ("radio", "📻 Start Radio (Admin)"),
+            ("radio", "📻 Start Radio"),
             ("stop", "⏹️ Стоп"),
             ("skip", "⏭️ Пропустить"),
             ("vote", "🗳️ Показать голосование"),
