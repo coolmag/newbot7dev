@@ -74,69 +74,49 @@ class YouTubeDownloader:
 
     async def search(self, query: str, limit: int = 30, **kwargs) -> List[TrackInfo]:
         logger.info(f"[Search] Запуск поиска для: '{query}'")
-
-        def strict_filter_entry(e: Dict[str, Any]) -> bool:
-            """A strict filter for finding specific, high-quality tracks."""
-            if not (e and e.get("id") and len(e.get("id")) == 11 and e.get("title")): return False
-            title = e.get('title', '').lower()
-            if not title: return False
-            duration = int(e.get('duration') or 0)
-            if not (self._settings.PLAY_MIN_SONG_DURATION_S <= duration <= self._settings.PLAY_MAX_SONG_DURATION_S): return False
-            
-            BANNED = ['cover', 'live', 'concert', 'karaoke', 'instrumental', 'vlog', 'parody', 'reaction', 'mashup']
-            if any(b in title for b in BANNED): return False
-            if title.count(',') > 3: return False
-            return True
-
-        def relaxed_filter_entry(e: Dict[str, Any]) -> bool:
-            """A more relaxed filter for genre queries, allowing mixes and compilations."""
-            if not (e and e.get("id") and len(e.get("id")) == 11 and e.get("title")): return False
-            title = e.get('title', '').lower()
-            if not title: return False
-            duration = int(e.get('duration') or 0)
-            if not (self._settings.PLAY_MIN_GENRE_DURATION_S <= duration <= self._settings.PLAY_MAX_GENRE_DURATION_S): return False
-            
-            BANNED = ['karaoke', 'vlog', 'parody', 'reaction'] # Less strict ban list
-            if any(b in title for b in BANNED): return False
-            return True
-
-        opts = self._get_opts("search")
-
+        
         try:
             is_genre_query = len(query.split()) <= 3
-            active_filter = relaxed_filter_entry if is_genre_query else strict_filter_entry
             
-            results = []
+            def filter_entry(entry: Dict[str, Any]) -> bool:
+                """Unified filter for YouTube search results."""
+                if not (entry and entry.get("id") and len(entry.get("id")) == 11 and entry.get("title")):
+                    return False
+                
+                title = entry.get('title', '').lower()
+                duration = int(entry.get('duration') or 0)
 
-            # For non-genre queries, try a strict search first with the !is_live filter
-            if not is_genre_query:
-                opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
-                strict_query = f"ytsearch15:{query} official audio"
-                info = await self._extract_info(strict_query, opts)
-                entries = info.get("entries", []) or []
-                results = [TrackInfo.from_yt_info(e) for e in entries if active_filter(e)]
-            
-            # If the strict search yields too few results, or it's a genre query, do a broader search.
-            # The !is_live filter from the strict search (if run) is still in opts, so we reset it for the broad search.
-            opts.pop('match_filter', None)
-            
-            if len(results) < 5:
+                # Determine duration limits based on query type
                 if is_genre_query:
-                    logger.info(f"[Search] Короткий запрос, используется широкий поиск с мягким фильтром.")
+                    min_dur, max_dur = self._settings.PLAY_MIN_GENRE_DURATION_S, self._settings.PLAY_MAX_GENRE_DURATION_S
                 else:
-                    logger.info(f"[Search] Строгий поиск дал мало результатов. Дополняю общим.")
-                
-                fallback_query = f"ytsearch{limit}:{query}"
-                info = await self._extract_info(fallback_query, opts)
-                fallback_entries = info.get("entries", []) or []
-                
-                current_ids = {r.identifier for r in results}
-                for e in fallback_entries:
-                    if e.get('id') not in current_ids and active_filter(e):
-                        results.append(TrackInfo.from_yt_info(e))
+                    min_dur, max_dur = self._settings.PLAY_MIN_SONG_DURATION_S, self._settings.PLAY_MAX_SONG_DURATION_S
 
-            logger.info(f"[Search] Финальный результат: {len(results)} треков.")
+                if not (min_dur <= duration <= max_dur):
+                    return False
+
+                # A less strict ban list, focusing on non-musical content
+                BANNED_KEYWORDS = ['karaoke', 'vlog', 'parody', 'reaction', 'tutorial', 'commentary']
+                if any(b in title for b in BANNED_KEYWORDS):
+                    return False
+                
+                return True
+
+            # Use a single, broader search and filter results in Python.
+            # Crucially, always filter out live streams at the yt-dlp level.
+            search_query = f"ytsearch{limit}:{query}"
+            opts = self._get_opts("search")
+            opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
+            
+            info = await self._extract_info(search_query, opts)
+            entries = info.get("entries", []) or []
+
+            # Process and filter the results
+            results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+
+            logger.info(f"[Search] Найдено и отфильтровано: {len(results)} треков.")
             return results[:limit]
+
         except Exception as e:
             logger.error(f"[Search] Критическая ошибка: {e}", exc_info=True)
             return []
