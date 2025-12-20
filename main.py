@@ -1,6 +1,7 @@
 import logging
 import mimetypes
 import asyncio
+import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -52,6 +53,21 @@ async def download_playlist_in_background(
         except Exception as e:
             logger.error(f"Error starting background download task for {track.identifier}: {e}")
 
+async def keep_alive_task(base_url: str):
+    """A background task to prevent the service from sleeping."""
+    health_url = f"{base_url.rstrip('/')}/health"
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.get(health_url, timeout=10)
+            logger.info("[Keep-Alive] Ping successful.")
+        except httpx.RequestError as e:
+            logger.warning(f"[Keep-Alive] Ping failed: {e}")
+        except Exception as e:
+            logger.error(f"[Keep-Alive] An unexpected error occurred: {e}", exc_info=True)
+        
+        await asyncio.sleep(240) # Sleep for 4 minutes
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -69,6 +85,9 @@ async def lifespan(app: FastAPI):
     radio = get_radio_manager_dep()
     downloader = get_downloader_dep()
 
+    # Start the keep-alive task
+    keep_alive = asyncio.create_task(keep_alive_task(settings.BASE_URL))
+
     # Create necessary directories and files from settings
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     if settings.COOKIES_CONTENT:
@@ -78,17 +97,19 @@ async def lifespan(app: FastAPI):
     await cache.initialize()
     
     # Set up Telegram handlers and start the bot
-    setup_handlers(tg_app, radio, settings)
+    setup_handlers(tg_app, radio, settings, downloader)
     await tg_app.initialize()
     await tg_app.start()
     
     try:
         await tg_app.bot.set_my_commands([
-            ("start", "🚀 Start"),
-            ("menu", "💿 Genre Catalog"),
+            ("start", "🚀 Start/Menu"),
+            ("play", "🎵 Найти трек"),
+            ("artist", "🎤 Радио по артисту"),
             ("radio", "📻 Start Radio (Admin)"),
-            ("stop", "⏹️ Stop"),
-            ("skip", "⏭️ Skip"),
+            ("stop", "⏹️ Стоп"),
+            ("skip", "⏭️ Пропустить"),
+            ("vote", "🗳️ Показать голосование"),
         ])
     except Exception as e: 
         logger.warning(f"Could not set bot commands: {e}")
@@ -104,6 +125,15 @@ async def lifespan(app: FastAPI):
 
     # --- Shutdown ---
     logger.info("Application shutting down...")
+    
+    # Gracefully stop the keep-alive task
+    logger.info("[Keep-Alive] Stopping keep-alive task...")
+    keep_alive.cancel()
+    try:
+        await keep_alive
+    except asyncio.CancelledError:
+        logger.info("[Keep-Alive] Task successfully cancelled.")
+
     try: 
         await get_radio_manager_dep().stop_all()
     except Exception as e: 

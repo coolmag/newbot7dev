@@ -22,8 +22,9 @@ from telegram.error import BadRequest
 
 from radio import RadioManager
 from config import Settings
-from keyboards import get_dashboard_keyboard, get_track_keyboard, get_genre_voting_keyboard
-from models import VoteCallback # Import the new callback model
+from keyboards import get_dashboard_keyboard, get_track_keyboard, get_genre_voting_keyboard, get_track_search_keyboard
+from youtube import YouTubeDownloader
+from models import VoteCallback, TrackInfo
 
 logger = logging.getLogger("handlers")
 
@@ -67,7 +68,7 @@ def _get_style_search_query(settings: Settings, main_genre_key: str, subgenre_ke
     subgenre = main_genre.get("subgenres", {}).get(subgenre_key, {})
     return subgenre.get("search", subgenre.get("name", "lofi beats"))
 
-def setup_handlers(app: Application, radio: RadioManager, settings: Settings) -> None:
+def setup_handlers(app: Application, radio: RadioManager, settings: Settings, downloader: YouTubeDownloader) -> None:
     
     # --- Command Handlers ---
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -83,6 +84,47 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_generate_main_genres_keyboard(settings)
         )
+
+    async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handles the /play command to search for a single track."""
+        query = " ".join(context.args)
+        if not query:
+            await update.message.reply_text("💬 Укажите название трека или имя исполнителя.\n\nНапример: `/play Queen - Bohemian Rhapsody`", parse_mode=ParseMode.MARKDOWN)
+            return
+
+        search_msg = await update.message.reply_text(f"🔍 Ищу: `{query}`...", parse_mode=ParseMode.MARKDOWN)
+        
+        try:
+            tracks = await downloader.search(query, limit=10)
+        except Exception as e:
+            logger.error(f"Ошибка при поиске трека по команде /play: {e}", exc_info=True)
+            await search_msg.edit_text("❌ Произошла ошибка во время поиска.")
+            return
+
+        if not tracks:
+            await search_msg.edit_text(f"❌ Ничего не найдено по запросу: `{query}`")
+            return
+
+        text = "**Вот что я нашел. Выберите трек:**\n\n"
+        for i, track in enumerate(tracks, 1):
+            text += f"{i}. `{track.title} - {track.artist}` ({track.format_duration()})\n"
+        
+        reply_markup = get_track_search_keyboard(tracks)
+        await search_msg.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        
+    async def artist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Starts a radio session for a specific artist."""
+        chat = update.effective_chat
+        query = " ".join(context.args)
+        if not query:
+            await update.message.reply_text("💬 Укажите имя исполнителя.\n\nНапример: `/artist Rammstein`", parse_mode=ParseMode.MARKDOWN)
+            return
+            
+        display_name = f"Волна по артисту: {query}"
+        await radio.start(chat.id, query, chat.type, display_name=display_name)
+        try:
+            await update.message.delete()
+        except: pass
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         chat = update.effective_chat
@@ -120,6 +162,34 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
         data = query.data
         chat_id = query.message.chat.id
         chat_type = query.message.chat.type
+
+        if data.startswith("track_choice:"):
+            track_id = data.removeprefix("track_choice:")
+            await query.edit_message_text(f"⏳ Загружаю выбранный трек...", reply_markup=None)
+            
+            result = await downloader.download(track_id)
+            if result.success:
+                try:
+                    with open(result.file_path, "rb") as audio_file:
+                        await context.bot.send_audio(
+                            chat_id=chat_id,
+                            audio=audio_file,
+                            title=result.track_info.title,
+                            performer=result.track_info.artist,
+                            duration=result.track_info.duration,
+                            caption=f"Трек загружен по вашему запросу."
+                        )
+                    await query.message.delete()
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке файла: {e}", exc_info=True)
+                    await query.edit_message_text("❌ Ошибка при отправке файла.")
+            else:
+                await query.edit_message_text(f"❌ Не удалось скачать: {result.error}")
+            return
+            
+        if data == "cancel_search":
+            await query.edit_message_text("Поиск отменен.", reply_markup=None)
+            return
 
         if data == "show_main_genres":
             await query.edit_message_text("💿 *Каталог жанров:*", parse_mode=ParseMode.MARKDOWN, reply_markup=_generate_main_genres_keyboard(settings))
@@ -163,6 +233,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings) ->
     # --- Register Handlers ---
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("menu", start_cmd))
+    app.add_handler(CommandHandler("play", play_cmd))
+    app.add_handler(CommandHandler("artist", artist_cmd))
     app.add_handler(CommandHandler("vote", vote_cmd))
     app.add_handler(CommandHandler("radio", radio_cmd, filters.User(settings.ADMIN_ID_LIST)))
     app.add_handler(CommandHandler("stop", stop_cmd))

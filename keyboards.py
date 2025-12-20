@@ -2,10 +2,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.constants import ChatType
 from config import get_settings
 from typing import List, Dict
-from models import VoteCallback
+from models import VoteCallback, TrackInfo
 
 
 settings = get_settings()
+
+def get_track_search_keyboard(tracks: List[TrackInfo]) -> InlineKeyboardMarkup:
+    """Creates a keyboard with a list of tracks for the user to choose from."""
+    buttons = []
+    for i, track in enumerate(tracks):
+        # Callback data format is "track_choice:<youtube_id>"
+        callback_data = f"track_choice:{track.identifier}"
+        buttons.append(InlineKeyboardButton(text=str(i + 1), callback_data=callback_data))
+    
+    # Arrange buttons in rows of 5
+    keyboard = [buttons[i:i + 5] for i in range(0, len(buttons), 5)]
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_search")])
+    return InlineKeyboardMarkup(keyboard)
 
 def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
     webapp_url = f"{base_url}/webapp/?chat_id={chat_id}"

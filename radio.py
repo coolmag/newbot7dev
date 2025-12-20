@@ -170,7 +170,7 @@ class RadioManager:
         try:
             vote_msg = await self._bot.send_message(
                 chat_id=s.chat_id,
-                text="📢 **Началось голосование за жанр!**\n\nВыберите, что будет играть следующие 30 минут. Голосование продлится 3 минуты.",
+                text="📢 **Началось голосование за жанр!**\n\nВыберите, что будет играть следующий час. Голосование продлится 3 минуты.",
                 reply_markup=get_genre_voting_keyboard(s.current_vote_genres, s.votes),
                 parse_mode=ParseMode.MARKDOWN,
             )
@@ -227,14 +227,14 @@ class RadioManager:
         else:
             s.winning_genre = random.choice(s.current_vote_genres)
         
-        s.mode_end_time = datetime.now() + timedelta(minutes=30)
+        s.mode_end_time = datetime.now() + timedelta(minutes=60)
         s.playlist.clear()
         s.fails_in_row = 0
         s.query = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre)
         s.display_name = s.query
         
         winner_name = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre.capitalize())
-        announcement = f"🎉 **Голосование завершено!**\n\nСледующие 30 минут играет: **{winner_name}**"
+        announcement = f"🎉 **Голосование завершено!**\n\nСледующий час играет: **{winner_name}**"
         
         try:
             await self._bot.edit_message_text(
