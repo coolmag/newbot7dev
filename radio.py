@@ -198,14 +198,19 @@ class RadioManager:
                 if len(s.playlist) < 5:
                     if not await self._fetch_playlist(s):
                         s.fails_in_row += 1
-                        # If fetching fails consistently for a specific query, stop the radio.
-                        if s.fails_in_row >= 3:
-                            logger.warning(f"[{s.chat_id}] Не удалось найти треки для '{s.query}' 3 раза подряд. Остановка радио.")
-                            await self._send_error_message(s.chat_id, f"❌ Не могу найти треки по запросу «{s.display_name}». Эфир остановлен.")
-                            # The loop will terminate as we call stop() in the finally block.
-                            break
+                        # 🆕 If fetching fails, auto-switch to a new random genre instead of stopping.
+                        if s.fails_in_row >= 5:
+                            logger.warning(f"[{s.chat_id}] Не удалось найти треки для '{s.query}'. Автоматическая смена источника.")
+                            await self._send_error_message(s.chat_id, f"🎧 Не найдено треков для «{s.display_name}». Ищу что-нибудь другое...")
+                            
+                            new_query, new_display_name = self._get_random_style_query()
+                            s.query = new_query
+                            s.display_name = new_display_name
+                            s.search_mode = 'genre' # Default to genre search on auto-switch
+                            s.fails_in_row = 0
+                            s.playlist.clear()
                         
-                        await asyncio.sleep(5) # Wait before retrying
+                        await asyncio.sleep(5) # Wait before retrying with the new query
                         continue 
                     s.fails_in_row = 0 # Reset counter on success
                 
@@ -250,9 +255,10 @@ class RadioManager:
                             duration=track_info.duration, caption=caption,
                             reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
-                    await asyncio.wait_for(s.skip_event.wait(), timeout=track_info.duration)
+                    # 🆕 Enforce a strict 90-second interval between tracks
+                    await asyncio.wait_for(s.skip_event.wait(), timeout=90.0)
                 except asyncio.TimeoutError:
-                    pass # Normal track end
+                    pass # Normal 90-second interval end
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

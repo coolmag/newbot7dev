@@ -47,13 +47,13 @@ class Settings(BaseSettings):
     RADIO_MAX_DURATION_S: int = 900 # Currently unused, consider removing or adapting
     RADIO_MIN_DURATION_S: int = 30 # Currently unused, consider removing or adapting
 
-    PLAY_MAX_SONG_DURATION_S: int = 600 # Max duration for individual songs (e.g., /play command)
-    PLAY_MIN_SONG_DURATION_S: int = 30 # Min duration for individual songs
+    PLAY_MAX_SONG_DURATION_S: int = 900 # Max duration for individual songs (e.g., /play command)
+    PLAY_MIN_SONG_DURATION_S: int = 60 # Min duration for individual songs
 
-    PLAY_MAX_GENRE_DURATION_S: int = 600 # Max duration for genre mixes/compilations
-    PLAY_MIN_GENRE_DURATION_S: int = 30 # Min duration for genre mixes/compilations
+    PLAY_MAX_GENRE_DURATION_S: int = 900 # Max duration for genre mixes/compilations
+    PLAY_MIN_GENRE_DURATION_S: int = 60 # Min duration for genre mixes/compilations
     
-    PLAY_MAX_FILE_SIZE_MB: int = 15
+    PLAY_MAX_FILE_SIZE_MB: int = 25
 
     @field_validator("ADMIN_ID_LIST", mode="before") # Updated to field_validator
     @classmethod
