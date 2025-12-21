@@ -84,6 +84,14 @@ class RadioManager:
         self._downloader = downloader
         self._voting_service = voting_service
         self._sessions: Dict[int, RadioSession] = {}
+        self._session_tasks: Dict[int, asyncio.Task] = {}
+        self._locks: Dict[int, asyncio.Lock] = {}
+
+    def _get_lock(self, chat_id: int) -> asyncio.Lock:
+        """Returns a lock for a given chat_id, creating one if it doesn't exist."""
+        if chat_id not in self._locks:
+            self._locks[chat_id] = asyncio.Lock()
+        return self._locks[chat_id]
 
     def _get_random_style_query(self) -> tuple[str, str]:
         """Returns a random genre search query and its display name."""
@@ -130,47 +138,50 @@ class RadioManager:
         return {"sessions": data}
 
     async def start(self, chat_id: int, query: str, chat_type: str, search_mode: SearchMode, message_id: Optional[int] = None, display_name: Optional[str] = None):
-        await self.stop(chat_id)
-        
-        # If starting in random genre mode, get an initial query right away.
-        if query == "random" and search_mode == "genre":
-            actual_query, actual_display_name = self._get_random_style_query()
-        else:
-            actual_query, actual_display_name = query.strip(), display_name or query.strip()
+        lock = self._get_lock(chat_id)
+        async with lock:
+            # Stop any existing session for this chat before starting a new one.
+            await self._stop_internal(chat_id)
             
-        session = RadioSession(
-            chat_id=chat_id, 
-            query=actual_query,
-            chat_type=chat_type,
-            search_mode=search_mode,
-            display_name=actual_display_name
-        )
+            if query == "random" and search_mode == "genre":
+                actual_query, actual_display_name = self._get_random_style_query()
+            else:
+                actual_query, actual_display_name = query.strip(), display_name or query.strip()
+                
+            session = RadioSession(
+                chat_id=chat_id, 
+                query=actual_query,
+                chat_type=chat_type,
+                search_mode=search_mode,
+                display_name=actual_display_name
+            )
 
-        # 🆕 Set initial mode end time to prevent immediate voting
-        if search_mode == 'artist':
-            # For artist mode, set a very long duration to effectively disable voting/switching
-            session.mode_end_time = datetime.now() + timedelta(hours=24)
-        else: # For 'genre' mode
-            session.mode_end_time = datetime.now() + timedelta(minutes=60)
-            
-        self._sessions[chat_id] = session
+            if search_mode == 'artist':
+                session.mode_end_time = datetime.now() + timedelta(hours=24)
+            else: # For 'genre' mode
+                session.mode_end_time = datetime.now() + timedelta(minutes=60)
+                
+            self._sessions[chat_id] = session
 
-        # This message is temporary and will be replaced by the audio message caption
-        msg = await self._bot.send_message(
-            chat_id=session.chat_id, 
-            text="⏳ Инициализация радио...", 
-            parse_mode=ParseMode.MARKDOWN
-        )
-        session.dashboard_msg_id = msg.message_id
+            task = asyncio.create_task(self._radio_loop(session))
+            self._session_tasks[chat_id] = task
+            logger.info(f"[{chat_id}] Радио запущено: '{session.query}' (режим: {session.search_mode})")
+
+    async def _stop_internal(self, chat_id: int):
+        """Internal stop method that doesn't acquire a lock, assuming it's already held."""
+        if task := self._session_tasks.pop(chat_id, None):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass # This is expected.
         
-        asyncio.create_task(self._radio_loop(session))
-        logger.info(f"[{chat_id}] Радио запущено: '{session.query}' (режим: {session.search_mode})")
-
-    async def stop(self, chat_id: int):
         if session := self._sessions.pop(chat_id, None):
-            session.stop_event.set()
-            if session.preload_task: session.preload_task.cancel()
-            if session.animation_task: session.animation_task.cancel()
+            # The loop's finally block will call this method again, but the session will be gone.
+            # We perform cleanup here to be sure.
+            session.stop_event.set() # Ensure event is set for any checks.
+            if session.preload_task and not session.preload_task.done(): session.preload_task.cancel()
+            if session.animation_task and not session.animation_task.done(): session.animation_task.cancel()
             await self._voting_service.end_voting_session(chat_id)
             
             paths_to_delete = [session.next_file_path, session.current_file_path]
@@ -180,9 +191,19 @@ class RadioManager:
                     except OSError as e: logger.error(f"Не удалось удалить файл {p_str}: {e}")
             
             await self._update_player_message(session, status_override="🛑 Эфир завершен")
+            logger.info(f"[{chat_id}] Сессия радио принудительно остановлена.")
+
+    async def stop(self, chat_id: int):
+        """Public stop method that acquires a lock."""
+        lock = self._get_lock(chat_id)
+        async with lock:
+            await self._stop_internal(chat_id)
 
     async def stop_all(self):
-        for chat_id in list(self._sessions.keys()): await self.stop(chat_id)
+        # Create a list of chat_ids to avoid issues with changing dict size during iteration
+        all_chat_ids = list(self._sessions.keys())
+        for chat_id in all_chat_ids:
+            await self.stop(chat_id)
         await self._voting_service.stop_all_votings()
 
     async def skip(self, chat_id: int):

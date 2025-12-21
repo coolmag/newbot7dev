@@ -84,6 +84,9 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
 
     async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles the /play command to search for a single track."""
+        # Stop any active radio session first
+        await radio.stop(update.effective_chat.id)
+        
         query = " ".join(context.args)
         if not query:
             await update.message.reply_text(
@@ -148,8 +151,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         display_name = f"Волна по артисту: {query}"
         
         try:
-            # 🆕 Добавлено уведомление о старте
-            status_msg = await update.message.reply_text(f"🎤 Запускаю радио по артисту {query}...")
+            # 🆕 Сообщаем о старте и НЕ удаляем сообщение
+            await update.message.reply_text(f"🎤 Запускаю радио по артисту: `{query}`...", parse_mode=ParseMode.MARKDOWN)
             
             await radio.start(
                 chat.id, 
@@ -158,14 +161,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
                 search_mode='artist',  # Явно указываем режим
                 display_name=display_name
             )
-            
-            # Удаляем статусное сообщение и команду
-            try:
-                await status_msg.delete()
-                await update.message.delete()
-            except:
-                pass
-                
         except Exception as e:
             logger.error(f"Ошибка запуска радио по артисту: {e}", exc_info=True)
             await update.message.reply_text(f"❌ Не удалось запустить радио: {str(e)}")
@@ -180,11 +175,12 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             await update.message.reply_text("❌ Слишком длинный запрос (максимум 100 символов)")
             return
         
-        try:
-            await update.message.delete()
-        except:
-            pass
-        
+        # 🆕 Отправляем фидбек и НЕ удаляем команду
+        if query == "random":
+            await update.message.reply_text("📻 Ищу случайную волну...", parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.message.reply_text(f"📻 Запускаю радио-волну: `{query}`...", parse_mode=ParseMode.MARKDOWN)
+
         try:
             await radio.start(
                 chat.id, 

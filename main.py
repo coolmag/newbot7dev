@@ -90,11 +90,10 @@ async def download_playlist_in_background(
     logger.info(f"[Background] Фоновая загрузка завершена.")
 
 
-async def keep_alive_task_func(base_url: str):
-    """
-    🆕 Переименованная функция keep-alive (чтобы не конфликтовать с переменной)
-    """
-    health_url = f"{base_url.rstrip('/')}/health"
+async def keep_alive_task_func():
+    """A task to ping the health check endpoint to keep the service alive on some platforms."""
+    # Pinging the internal localhost address is more reliable than the external BASE_URL.
+    health_url = "http://localhost:8080/api/health"
     consecutive_failures = 0
     
     while True:
@@ -106,22 +105,22 @@ async def keep_alive_task_func(base_url: str):
                     logger.debug("[Keep-Alive] Ping OK")
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"[Keep-Alive] Status {response.status_code}")
-                    health_monitor.record_error() # 🆕 Запись ошибки
+                    logger.warning(f"[Keep-Alive] Status {response.status_code} for {health_url}")
+                    health_monitor.record_error()
         except httpx.RequestError as e:
             consecutive_failures += 1
-            logger.warning(f"[Keep-Alive] Ping failed ({consecutive_failures}): {e}")
-            health_monitor.record_error() # 🆕 Запись ошибки
+            logger.warning(f"[Keep-Alive] Ping failed for {health_url} ({consecutive_failures}): {e}")
+            health_monitor.record_error()
         except Exception as e:
             consecutive_failures += 1
-            logger.error(f"[Keep-Alive] Unexpected error: {e}", exc_info=True)
-            health_monitor.record_error() # 🆕 Запись ошибки
+            logger.error(f"[Keep-Alive] Unexpected error for {health_url}: {e}", exc_info=True)
+            health_monitor.record_error()
         
-        # 🆕 Если слишком много ошибок подряд - увеличиваем интервал
+        # If there are many consecutive failures, increase the sleep interval.
         if consecutive_failures > 5:
-            await asyncio.sleep(600)  # 10 минут после серии ошибок
+            await asyncio.sleep(600)  # 10 minutes
         else:
-            await asyncio.sleep(240)  # 4 минуты обычно
+            await asyncio.sleep(240)  # 4 minutes
 
 
 @asynccontextmanager
@@ -140,8 +139,8 @@ async def lifespan(app: FastAPI):
     downloader = get_downloader_dep()
     voting_service = get_genre_voting_service_dep()
 
-    # 🆕 Создаем keep-alive задачу с отслеживанием
-    keep_alive_task = asyncio.create_task(keep_alive_task_func(settings.BASE_URL))
+    # Create the keep-alive task without passing the base_url
+    keep_alive_task = asyncio.create_task(keep_alive_task_func())
 
     # Создаем директории
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,20 +226,21 @@ async def root():
 
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
-@app.get("/health")
-async def health():
-    return {"ok": True}
-
-# 🆕 Детальный health check
-@app.get("/health/detailed")
-async def detailed_health():
-    return health_monitor.get_stats()
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("webapp/favicon.svg", media_type="image/svg+xml")
 
 # --- API Routes for Web Player ---
+
+# 🆕 Moved health checks under /api
+@app.get("/api/health")
+async def health():
+    return {"ok": True}
+
+@app.get("/api/health/detailed")
+async def detailed_health():
+    return health_monitor.get_stats()
 
 class RadioStartRequest(BaseModel):
     chat_id: int
