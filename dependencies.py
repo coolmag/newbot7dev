@@ -4,7 +4,7 @@ from telegram.ext import Application
 from telegram import Bot
 
 from config import get_settings, Settings
-from database import DatabaseService
+from cache import CacheService
 from youtube import YouTubeDownloader
 from radio import RadioManager
 from radio_voting import GenreVotingService # Import the new service
@@ -18,16 +18,16 @@ def get_settings_dep() -> Settings:
     return get_settings()
 
 @lru_cache()
-def get_database_service_dep() -> DatabaseService:
-    """Dependency to get the DatabaseService."""
-    return DatabaseService(settings=get_settings_dep())
+def get_cache_service_dep() -> CacheService:
+    """Dependency to get the CacheService."""
+    return CacheService(settings=get_settings_dep())
 
 @lru_cache()
 def get_downloader_dep() -> YouTubeDownloader:
     """Dependency to get the YouTubeDownloader."""
     return YouTubeDownloader(
         settings=get_settings_dep(), 
-        db_service=get_database_service_dep()
+        cache_service=get_cache_service_dep()
     )
 
 @lru_cache()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import asyncio
 from typing import Optional
 
 from telegram import (
@@ -84,9 +83,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
 
     async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handles the /play command to search for a single track."""
-        # Stop any active radio session first
-        await radio.stop(update.effective_chat.id)
-        
         query = " ".join(context.args)
         if not query:
             await update.message.reply_text(
@@ -151,8 +147,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         display_name = f"Волна по артисту: {query}"
         
         try:
-            # 🆕 Сообщаем о старте и НЕ удаляем сообщение
-            await update.message.reply_text(f"🎤 Запускаю радио по артисту: `{query}`...", parse_mode=ParseMode.MARKDOWN)
+            # 🆕 Добавлено уведомление о старте
+            status_msg = await update.message.reply_text(f"🎤 Запускаю радио по артисту {query}...")
             
             await radio.start(
                 chat.id, 
@@ -161,6 +157,14 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
                 search_mode='artist',  # Явно указываем режим
                 display_name=display_name
             )
+            
+            # Удаляем статусное сообщение и команду
+            try:
+                await status_msg.delete()
+                await update.message.delete()
+            except:
+                pass
+                
         except Exception as e:
             logger.error(f"Ошибка запуска радио по артисту: {e}", exc_info=True)
             await update.message.reply_text(f"❌ Не удалось запустить радио: {str(e)}")
@@ -175,12 +179,11 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             await update.message.reply_text("❌ Слишком длинный запрос (максимум 100 символов)")
             return
         
-        # 🆕 Отправляем фидбек и НЕ удаляем команду
-        if query == "random":
-            await update.message.reply_text("📻 Ищу случайную волну...", parse_mode=ParseMode.MARKDOWN)
-        else:
-            await update.message.reply_text(f"📻 Запускаю радио-волну: `{query}`...", parse_mode=ParseMode.MARKDOWN)
-
+        try:
+            await update.message.delete()
+        except:
+            pass
+        
         try:
             await radio.start(
                 chat.id, 
@@ -250,27 +253,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             return
 
         if data == "show_main_genres":
-            try:
-                # First, try to edit. If it's a text message, this is fast.
-                await query.edit_message_text(
-                    "💿 *Каталог жанров:*",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=_generate_main_genres_keyboard(settings)
-                )
-            except BadRequest as e:
-                # If it fails because it's a media message, delete and send new.
-                if "There is no text in the message to edit" in str(e):
-                    await query.message.delete()
-                    await query.message.chat.send_message(
-                        "💿 *Каталог жанров:*",
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=_generate_main_genres_keyboard(settings)
-                    )
-                else:
-                    # Re-raise other bad requests
-                    raise e
-            return
-
+            await query.edit_message_text("💿 *Каталог жанров:*", parse_mode=ParseMode.MARKDOWN, reply_markup=_generate_main_genres_keyboard(settings))
         elif data.startswith("genre_main:"):
             main_genre_key = data.removeprefix("genre_main:")
             main_genre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("name", "Жанр")
@@ -305,18 +288,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
 
         elif data == "stop_radio": await radio.stop(chat_id)
         elif data == "skip_track": await radio.skip(chat_id)
-        
-        elif data == "cancel_menu":
-            try:
-                await query.message.delete()
-            except BadRequest:
-                # If deletion fails, edit to a closed state as a fallback
-                try:
-                    await query.edit_message_text("Меню закрыто.", reply_markup=None)
-                except BadRequest: # If that also fails, just ignore.
-                    pass
-            return
-            
+        elif data == "cancel_menu": await query.edit_message_text("Меню закрыто.", reply_markup=None)
         elif data == "noop": pass
 
     # --- Register Handlers (No changes needed) ---

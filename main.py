@@ -19,14 +19,14 @@ from telegram.ext import Application
 from auth import get_validated_user, WebAppUser
 from config import Settings
 from logging_setup import setup_logging
-from database import DatabaseService
+from cache import CacheService
 from youtube import YouTubeDownloader
 from models import Source, TrackInfo
 from radio import RadioManager
 from handlers import setup_handlers
 from dependencies import (
     get_settings_dep,
-    get_database_service_dep,
+    get_cache_service_dep,
     get_downloader_dep,
     get_telegram_app_dep,
     get_radio_manager_dep,
@@ -90,17 +90,14 @@ async def download_playlist_in_background(
     logger.info(f"[Background] Фоновая загрузка завершена.")
 
 
-async def keep_alive_task_func():
-    """A task to ping the health check endpoint to keep the service alive on some platforms."""
-    # Pinging the internal 127.0.0.1 address is more reliable than localhost.
-    health_url = "http://127.0.0.1:8080/api/health"
+async def keep_alive_task_func(base_url: str):
+    """
+    🆕 Переименованная функция keep-alive (чтобы не конфликтовать с переменной)
+    """
+    health_url = f"{base_url.rstrip('/')}/health"
     consecutive_failures = 0
     
     while True:
-        # Wait 30 seconds on first run before starting the loop
-        if consecutive_failures == 0:
-            await asyncio.sleep(30)
-
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(health_url)
@@ -109,22 +106,22 @@ async def keep_alive_task_func():
                     logger.debug("[Keep-Alive] Ping OK")
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"[Keep-Alive] Status {response.status_code} for {health_url}")
-                    health_monitor.record_error()
+                    logger.warning(f"[Keep-Alive] Status {response.status_code}")
+                    health_monitor.record_error() # 🆕 Запись ошибки
         except httpx.RequestError as e:
             consecutive_failures += 1
-            logger.warning(f"[Keep-Alive] Ping failed for {health_url} ({consecutive_failures}): {e}")
-            health_monitor.record_error()
+            logger.warning(f"[Keep-Alive] Ping failed ({consecutive_failures}): {e}")
+            health_monitor.record_error() # 🆕 Запись ошибки
         except Exception as e:
             consecutive_failures += 1
-            logger.error(f"[Keep-Alive] Unexpected error for {health_url}: {e}", exc_info=True)
-            health_monitor.record_error()
+            logger.error(f"[Keep-Alive] Unexpected error: {e}", exc_info=True)
+            health_monitor.record_error() # 🆕 Запись ошибки
         
-        # If there are many consecutive failures, increase the sleep interval.
+        # 🆕 Если слишком много ошибок подряд - увеличиваем интервал
         if consecutive_failures > 5:
-            await asyncio.sleep(600)  # 10 minutes
+            await asyncio.sleep(600)  # 10 минут после серии ошибок
         else:
-            await asyncio.sleep(240)  # 4 minutes
+            await asyncio.sleep(240)  # 4 минуты обычно
 
 
 @asynccontextmanager
@@ -137,14 +134,14 @@ async def lifespan(app: FastAPI):
     logger.info("⚡ Application starting up...")
 
     settings = get_settings_dep()
-    db_service = get_database_service_dep()
+    cache = get_cache_service_dep()
     tg_app = get_telegram_app_dep()
     radio = get_radio_manager_dep()
     downloader = get_downloader_dep()
     voting_service = get_genre_voting_service_dep()
 
-    # Create the keep-alive task without passing the base_url
-    keep_alive_task = asyncio.create_task(keep_alive_task_func())
+    # 🆕 Создаем keep-alive задачу с отслеживанием
+    keep_alive_task = asyncio.create_task(keep_alive_task_func(settings.BASE_URL))
 
     # Создаем директории
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -152,7 +149,7 @@ async def lifespan(app: FastAPI):
         settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
 
     # Инициализация сервисов
-    await db_service.initialize()
+    await cache.initialize()
     
     setup_handlers(tg_app, radio, settings, downloader, voting_service)
     await tg_app.initialize()
@@ -206,7 +203,7 @@ async def lifespan(app: FastAPI):
     await tg_app.shutdown()
     
     # Закрытие кеша
-    await db_service.close()
+    await cache.close()
     
     logger.info("✅ Application shutdown complete.")
 
@@ -230,21 +227,20 @@ async def root():
 
 app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+# 🆕 Детальный health check
+@app.get("/health/detailed")
+async def detailed_health():
+    return health_monitor.get_stats()
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("webapp/favicon.svg", media_type="image/svg+xml")
 
 # --- API Routes for Web Player ---
-
-# 🆕 Moved health checks under /api
-@app.get("/api/health")
-async def health():
-    return {"ok": True}
-
-@app.get("/api/health/detailed")
-async def detailed_health():
-    return health_monitor.get_stats()
 
 class RadioStartRequest(BaseModel):
     chat_id: int
@@ -306,10 +302,10 @@ async def get_player_playlist(
         raise HTTPException(status_code=400, detail="Query parameter is required and cannot be empty.")
 
     try:
-        # 💡 Use 'genre' mode for broad web app queries to find mixes and compilations
+        # 🆕 Поиск с таймаутом
         tracks = await asyncio.wait_for(
-            downloader.search(query, search_mode='genre', limit=15),
-            timeout=20.0
+            downloader.search(query, search_mode='track', limit=15),
+            timeout=20.0  # Максимум 20 секунд на поиск
         )
         
         if not tracks:
@@ -323,7 +319,7 @@ async def get_player_playlist(
             
             result = await asyncio.wait_for(
                 downloader.download(first_track.identifier),
-                timeout=45.0
+                timeout=45.0  # 🆕 45 секунд на первый трек
             )
             
             if not result.success:
@@ -407,7 +403,7 @@ async def get_player_playlist(
 @app.get("/audio/{track_id}")
 async def get_audio(
     track_id: str,
-    db_service: DatabaseService = Depends(get_database_service_dep)
+    cache: CacheService = Depends(get_cache_service_dep)
 ):
     """
     🆕 УЛУЧШЕННАЯ обработка запросов аудио с graceful degradation
@@ -419,7 +415,7 @@ async def get_audio(
             raise HTTPException(status_code=400, detail="Invalid track ID format")
         
         # Попытка получить из кеша
-        cached_result = await db_service.get(f"yt:{track_id}", Source.YOUTUBE)
+        cached_result = await cache.get(f"yt:{track_id}", Source.YOUTUBE)
         
         # Проверки наличия файла
         if cached_result and cached_result.file_path:
@@ -440,7 +436,7 @@ async def get_audio(
                 # Файл в кеше, но отсутствует на диске
                 logger.warning(f"[Audio] Файл из кеша отсутствует: {file_path}")
                 # Удаляем битую запись из кеша
-                asyncio.create_task(db_service.blacklist_track_id(track_id))
+                asyncio.create_task(cache.blacklist_track_id(track_id))
         
         # Файл не найден - возвращаем информативную ошибку
         logger.info(f"[Audio] Трек {track_id} не найден в кеше")
