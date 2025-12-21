@@ -153,26 +153,32 @@ class YouTubeDownloader:
                     # Для жанров: меньше запросов, больше результатов
                     logger.info(f"[Search] Жанровый поиск, стратегия: тематические запросы.")
                     
-                    # 🆕 Только 2 запроса вместо 6!
-                    primary_query = f"{query} mix"
-                    secondary_query = f"{query} playlist"
+                    # 💡 Упрощенная и более надежная стратегия
+                    queries_to_try = [
+                        query,              # 1. Сначала точный запрос (e.g., "darkwave playlist")
+                        f"{query} mix",      # 2. Потом с "mix"
+                        f"{query} playlist"  # 3. Потом с "playlist"
+                    ]
                     
-                    for themed_query in [primary_query, secondary_query]:
+                    for themed_query in queries_to_try:
                         if len(final_results) >= limit:
                             break
                             
-                        search_query = f"ytsearch{limit * 2}:{themed_query}"  # Запрашиваем больше
+                        search_query = f"ytsearch{limit}:{themed_query}"
                         
                         try:
                             info = await self._extract_info(search_query, opts)
                             entries = info.get("entries", []) or []
                             
                             processed = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-                            final_results.extend(processed)
                             
-                            if processed:
-                                logger.info(f"[Search] Найдено {len(processed)} треков с '{themed_query}'")
-                                # No break, continue to gather more tracks from other queries
+                            # Добавляем только уникальные треки
+                            new_tracks = [p for p in processed if p.identifier not in {r.identifier for r in final_results}]
+                            final_results.extend(new_tracks)
+                            
+                            if new_tracks:
+                                logger.info(f"[Search] Найдено {len(new_tracks)} новых треков с '{themed_query}'")
+
                         except Exception as e:
                             logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
                             continue
