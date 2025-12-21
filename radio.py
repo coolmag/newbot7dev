@@ -218,7 +218,14 @@ class RadioManager:
                     result = await self._downloader.download(track.identifier)
                     if not result.success:
                         logger.warning(f"[{s.chat_id}] Ошибка скачивания: {result.error}")
+                        s.fails_in_row += 1
+                        if s.fails_in_row >= 3:
+                            logger.error(f"[{s.chat_id}] Не удалось скачать 3 трека подряд. Остановка радио.")
+                            await self._send_error_message(s.chat_id, f"❌ Не могу скачать треки. Эфир остановлен.")
+                            break # Break out of the radio loop to stop the session
                         continue
+                    else:
+                        s.fails_in_row = 0 # Reset fails counter on successful download
                     file_path, track_info = result.file_path, result.track_info
 
                 s.current, s.current_file_path = track_info, Path(file_path)

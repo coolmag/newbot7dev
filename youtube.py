@@ -52,7 +52,7 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio[filesize<15M][ext=m4a]/bestaudio[filesize<15M]/bestaudio", # Prioritize small m4a then any small audio
+                "format": "bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
