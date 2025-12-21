@@ -17,7 +17,7 @@ from telegram.error import TelegramError, BadRequest
 from config import Settings
 from models import TrackInfo
 from youtube import YouTubeDownloader, SearchMode # Import SearchMode
-from keyboards import get_dashboard_keyboard
+from keyboards import get_dashboard_keyboard, get_track_keyboard
 from radio_voting import GenreVotingService
 
 logger = logging.getLogger("radio")
@@ -124,6 +124,14 @@ class RadioManager:
             search_mode=search_mode,
             display_name=actual_display_name
         )
+
+        # 🆕 Set initial mode end time to prevent immediate voting
+        if search_mode == 'artist':
+            # For artist mode, set a very long duration to effectively disable voting/switching
+            session.mode_end_time = datetime.now() + timedelta(hours=24)
+        else: # For 'genre' mode
+            session.mode_end_time = datetime.now() + timedelta(minutes=60)
+            
         self._sessions[chat_id] = session
 
         if message_id:
@@ -165,8 +173,8 @@ class RadioManager:
             while not s.stop_event.is_set():
                 s.skip_event.clear()
 
-                # --- Voting and Genre Change Logic ---
-                if s.mode_end_time is None or datetime.now() >= s.mode_end_time:
+                # --- Voting and Genre Change Logic (Only for 'genre' mode) ---
+                if s.search_mode == 'genre' and datetime.now() >= s.mode_end_time:
                     winning_genre_key = await self._voting_service.end_voting(s.chat_id)
                     if winning_genre_key:
                         s.winning_genre = winning_genre_key
@@ -176,7 +184,6 @@ class RadioManager:
                         genre_info = self._settings.GENRE_DATA.get(s.winning_genre, {})
                         s.query = genre_info.get("name", s.winning_genre)
                         s.display_name = s.query
-                        s.search_mode = 'genre' # Ensure mode is genre
                         
                         # Clear state for the new genre
                         s.playlist.clear()
@@ -184,7 +191,7 @@ class RadioManager:
                         s.fails_in_row = 0
                         s.skip_event.set() # Immediately skip to start the new genre
 
-                            # Start a new vote cycle for the *next* genre. It will send its own message.
+                    # Start a new vote cycle for the *next* genre.
                     await self._voting_service.start_new_voting_cycle(s.chat_id)
                 
                 # --- Playlist Fetching Logic ---
