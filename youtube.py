@@ -276,20 +276,20 @@ class YouTubeDownloader:
                     logger.warning(f"[Download] Не удалось проверить длительность {video_id}: {e}")
                     # Продолжаем
 
-                # 🆕 RETRY-ЛОГИКА для загрузки
-                max_retries = 2
+                # 🆕 Уменьшаем количество попыток и таймаут, чтобы бот был более отзывчивым
+                max_retries = 1 
                 for attempt in range(max_retries + 1):
                     try:
                         loop = asyncio.get_running_loop()
                         download_opts = self._get_opts("download")
                         
-                        # 🆕 Уменьшен таймаут: 60 секунд вместо 120
+                        # 🆕 Уменьшен таймаут: 30 секунд вместо 60
                         download_task = loop.run_in_executor(
                             None, 
                             lambda: yt_dlp.YoutubeDL(download_opts).download([video_url])
                         )
                         
-                        await asyncio.wait_for(download_task, timeout=60.0)
+                        await asyncio.wait_for(download_task, timeout=30.0)
                         
                         # Поиск файла
                         final_path = self._find_downloaded_file(video_id)
