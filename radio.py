@@ -22,6 +22,26 @@ from radio_voting import GenreVotingService
 
 logger = logging.getLogger("radio")
 
+class PlayerAnimator:
+    """Creates a textual animation for the player."""
+    def __init__(self):
+        self._frames = [
+            "☀️ 💿",
+            "☀️ . 💿",
+            "☀️ . . 💿",
+            "☀️ . . . 💿",
+            "💿 . . . ☀️",
+            "💿 . . ☀️",
+            "💿 . ☀️",
+            "💿 ☀️"
+        ]
+        self._current_frame = 0
+
+    def get_next_frame(self) -> str:
+        frame = self._frames[self._current_frame]
+        self._current_frame = (self._current_frame + 1) % len(self._frames)
+        return frame
+
 @dataclass
 class RadioSession:
     # Core session attributes
@@ -50,11 +70,12 @@ class RadioSession:
     # Status & UI
     fails_in_row: int = 0
     dashboard_msg_id: Optional[int] = None
+    animator: PlayerAnimator = field(default_factory=PlayerAnimator)
+    animation_task: Optional[asyncio.Task] = None
     
     # --- Mode attributes ---
     mode_end_time: Optional[datetime] = None
     winning_genre: Optional[str] = None
-
 
 class RadioManager:
     def __init__(self, bot: Bot, settings: Settings, downloader: YouTubeDownloader, voting_service: GenreVotingService):
@@ -134,12 +155,13 @@ class RadioManager:
             
         self._sessions[chat_id] = session
 
-        if message_id:
-            session.dashboard_msg_id = message_id
-            await self._update_dashboard(session, status="🔍 Поиск треков...")
-        else:
-            msg = await self._send_dashboard(session, status="🔍 Поиск треков...")
-            if msg: session.dashboard_msg_id = msg.message_id
+        # This message is temporary and will be replaced by the audio message caption
+        msg = await self._bot.send_message(
+            chat_id=session.chat_id, 
+            text="⏳ Инициализация радио...", 
+            parse_mode=ParseMode.MARKDOWN
+        )
+        session.dashboard_msg_id = msg.message_id
         
         asyncio.create_task(self._radio_loop(session))
         logger.info(f"[{chat_id}] Радио запущено: '{session.query}' (режим: {session.search_mode})")
@@ -148,6 +170,7 @@ class RadioManager:
         if session := self._sessions.pop(chat_id, None):
             session.stop_event.set()
             if session.preload_task: session.preload_task.cancel()
+            if session.animation_task: session.animation_task.cancel()
             await self._voting_service.end_voting_session(chat_id)
             
             paths_to_delete = [session.next_file_path, session.current_file_path]
@@ -156,7 +179,7 @@ class RadioManager:
                     try: Path(p_str).unlink(missing_ok=True)
                     except OSError as e: logger.error(f"Не удалось удалить файл {p_str}: {e}")
             
-            await self._update_dashboard(session, status="🛑 Эфир завершен")
+            await self._update_player_message(session, status_override="🛑 Эфир завершен")
 
     async def stop_all(self):
         for chat_id in list(self._sessions.keys()): await self.stop(chat_id)
@@ -165,11 +188,19 @@ class RadioManager:
     async def skip(self, chat_id: int):
         if session := self._sessions.get(chat_id):
             session.skip_event.set()
-            await self._update_dashboard(session, status="⏭️ Переключение...")
+            await self._update_player_message(session, status_override="⏭️ Переключение...")
 
     # --- Main Radio Loop (Refactored) ---
     async def _radio_loop(self, s: RadioSession):
         try:
+            # Delete the initial "Initializing..." message
+            if s.dashboard_msg_id:
+                try:
+                    await self._bot.delete_message(s.chat_id, s.dashboard_msg_id)
+                    s.dashboard_msg_id = None
+                except (TelegramError, BadRequest):
+                    pass # Message might already be gone
+
             while not s.stop_event.is_set():
                 s.skip_event.clear()
 
@@ -227,7 +258,7 @@ class RadioManager:
                     s.playlist.popleft()
                 else:
                     track = s.playlist.popleft()
-                    await self._update_dashboard(s, status=f"⬇️ Загрузка: {track.title[:35]}...")
+                    # No status update here, caption will show download status
                     result = await self._downloader.download(track.identifier)
                     if not result.success:
                         logger.warning(f"[{s.chat_id}] Ошибка скачивания: {result.error}")
@@ -247,15 +278,25 @@ class RadioManager:
                 if s.preload_task: s.preload_task.cancel()
                 s.preload_task = asyncio.create_task(self._preload_next_track(s))
 
-                await self._update_dashboard(s, status="▶️ В эфире")
+                # Cancel previous animation and delete old message
+                if s.animation_task: s.animation_task.cancel()
+                if s.dashboard_msg_id:
+                    try: await self._bot.delete_message(s.chat_id, s.dashboard_msg_id)
+                    except (TelegramError, BadRequest): pass
+                
                 try:
-                    caption = f"#{s.display_name.replace(' ', '_').replace(':', '')}"
+                    caption = self._build_dashboard_text(s, "▶️ В эфире")
                     with open(file_path, "rb") as f:
-                        await self._bot.send_audio(
+                        audio_msg = await self._bot.send_audio(
                             s.chat_id, f, title=track_info.title, performer=track_info.artist,
                             duration=track_info.duration, caption=caption,
-                            reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
                         )
+                        s.dashboard_msg_id = audio_msg.message_id
+                    
+                    s.animation_task = asyncio.create_task(self._animation_loop(s))
+                    
                     # 🆕 Enforce a strict 90-second interval between tracks
                     await asyncio.wait_for(s.skip_event.wait(), timeout=90.0)
                 except asyncio.TimeoutError:
@@ -270,6 +311,18 @@ class RadioManager:
         finally:
             logger.info(f"[{s.chat_id}] Завершение сессии.")
             await self.stop(s.chat_id) # Ensure session is always cleaned up
+
+    async def _animation_loop(self, s: RadioSession):
+        """Periodically updates the player message to create an animation."""
+        while not s.stop_event.is_set():
+            try:
+                await asyncio.sleep(4) # Animation update interval
+                await self._update_player_message(s)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"[{s.chat_id}] Ошибка в цикле анимации: {e}")
+                await asyncio.sleep(10) # Wait longer after an error
 
     async def _preload_next_track(self, s: RadioSession):
         try:
@@ -301,42 +354,35 @@ class RadioManager:
         except: pass
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
-        # (No changes needed)
         status = status_override or f"▶️ В эфире"
         track = s.current.title if s.current else "..."
         artist = s.current.artist if s.current else "..."
         query = s.display_name or s.query
-        return f"""📻 *CYBER RADIO V7*
-━━━━━━━━━━━━━━━━━━
-💿 *Трек:* `{track}`
-👤 *Артист:* `{artist}`
-🏷 *Волна:* _{query}_
+        animation_frame = s.animator.get_next_frame()
 
-▓▓▓▓▓░░░░░
+        return f"""{animation_frame}
+*Трек:* `{track}`
+*Артист:* `{artist}`
+*Волна:* _{query}_
+*Статус:* {status}"""
 
-ℹ️ _Статус:_ {status}"""
+    async def _update_player_message(self, s: RadioSession, status_override: str = None):
+        """Updates the caption of the current audio message."""
+        if not s.dashboard_msg_id:
+            return
 
-    async def _send_dashboard(self, s: RadioSession, status: str) -> Optional[Message]:
-        text = self._build_dashboard_text(s, status)
+        text = self._build_dashboard_text(s, status_override)
         try:
-            return await self._bot.send_message(
-                chat_id=s.chat_id, text=text, parse_mode=ParseMode.MARKDOWN,
-                reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
-            )
-        except Exception as e:
-            logger.error(f"Не удалось отправить панель: {e}")
-            return None
-
-    async def _update_dashboard(self, s: RadioSession, status: str = None):
-        if not s.dashboard_msg_id: return
-        text = self._build_dashboard_text(s, status)
-        try:
-            await self._bot.edit_message_text(
-                chat_id=s.chat_id, message_id=s.dashboard_msg_id, text=text,
+            await self._bot.edit_message_caption(
+                chat_id=s.chat_id,
+                message_id=s.dashboard_msg_id,
+                caption=text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
             )
-        except BadRequest:
-            s.dashboard_msg_id = None
+        except BadRequest as e:
+            # If the message text is not modified, it's not an error we need to log verbosely.
+            if "Message is not modified" not in str(e):
+                logger.warning(f"Не удалось обновить подпись: {e}")
         except Exception as e:
-            logger.warning(f"Не удалось обновить панель: {e}")
+            logger.warning(f"Не удалось обновить подпись: {e}")
