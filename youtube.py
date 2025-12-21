@@ -3,9 +3,9 @@ import asyncio
 import glob
 import logging
 import re
-import random # Added this import
+import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 import yt_dlp
 from config import Settings
@@ -14,17 +14,14 @@ from cache import CacheService
 
 logger = logging.getLogger(__name__)
 
+# Define a literal type for search modes to enforce correctness
+SearchMode = Literal['track', 'artist', 'genre']
+
 class SilentLogger:
     """A silent logger that discards all messages."""
-    def debug(self, msg):
-        # For compatibility, yt-dlp expects these methods.
-        pass
-
-    def warning(self, msg):
-        pass
-
-    def error(self, msg):
-        pass
+    def debug(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): pass
 
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
@@ -45,10 +42,9 @@ class YouTubeDownloader:
             "no_check_certificate": True,
             "geo_bypass": True,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "logger": SilentLogger(),  # Use the silent logger
+            "logger": SilentLogger(),
         }
         
-        # Add cookie support to prevent "Sign in to confirm you're not a bot" errors
         if self._settings.COOKIES_FILE.exists() and self._settings.COOKIES_FILE.stat().st_size > 0:
             opts['cookiefile'] = str(self._settings.COOKIES_FILE)
 
@@ -56,10 +52,8 @@ class YouTubeDownloader:
             opts.update({"extract_flat": "in_playlist", "skip_download": True})
         elif mode == "download":
             opts.update({
-                "format": "bestaudio/best", # Always get the best audio, regardless of its original container
+                "format": "bestaudio/best",
                 "outtmpl": str(self._settings.DOWNLOADS_DIR / "%(id)s.%(ext)s"),
-                # Unconditionally re-encode to M4A to ensure a standard, playable format.
-                # This handles new/unsupported codecs like 'iamf' gracefully.
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "m4a",
@@ -74,44 +68,37 @@ class YouTubeDownloader:
         return await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=False))
 
     def _find_downloaded_file(self, video_id: str) -> Optional[str]:
-        """Finds the downloaded audio file, checking for common audio extensions, prioritizing m4a."""
         base_path = self._settings.DOWNLOADS_DIR / video_id
-        # Prioritize m4a as it's our preferred output format from the post-processor
-        for ext in ["m4a", "mp3", "webm", "opus"]: 
+        for ext in ["m4a", "mp3", "webm", "opus"]:
             file_path = base_path.with_suffix(f".{ext}")
-            if file_path.exists():
-                return str(file_path)
+            if file_path.exists(): return str(file_path)
         return None
 
-    async def search(self, query: str, limit: int = 30, **kwargs) -> List[TrackInfo]:
-        logger.info(f"[Search] Запуск поиска для: '{query}'")
+    async def search(self, query: str, search_mode: SearchMode = 'track', limit: int = 30) -> List[TrackInfo]:
+        logger.info(f"[Search] Запуск поиска для: '{query}' (режим: {search_mode})")
         
         try:
-            is_genre_query = (
-                len(query.split()) <= 3
-                or any(keyword in query.lower() for keyword in ['mix', 'playlist', 'beats', 'radio', 'study', 'chill', 'ambient', 'instrumental'])
-            )
-            
             def filter_entry(entry: Dict[str, Any]) -> bool:
-                """Unified filter for YouTube search results."""
                 if not (entry and entry.get("id") and len(entry.get("id")) == 11 and entry.get("title")):
                     return False
                 
                 title = entry.get('title', '').lower()
                 duration = int(entry.get('duration') or 0)
 
-                # Determine duration limits based on query type
-                if is_genre_query:
+                if search_mode == 'genre':
                     min_dur, max_dur = self._settings.PLAY_MIN_GENRE_DURATION_S, self._settings.PLAY_MAX_GENRE_DURATION_S
-                else:
+                else: # 'track' and 'artist' modes use song duration limits
                     min_dur, max_dur = self._settings.PLAY_MIN_SONG_DURATION_S, self._settings.PLAY_MAX_SONG_DURATION_S
 
                 if not (min_dur <= duration <= max_dur):
                     return False
 
-                # A less strict ban list, focusing on non-musical content
-                BANNED_KEYWORDS = ['karaoke', 'vlog', 'parody', 'reaction', 'tutorial', 'commentary']
-                if any(b in title for b in BANNED_KEYWORDS):
+                BANNED_KEYWORDS = ['karaoke', 'vlog', 'parody', 'reaction', 'tutorial', 'commentary', 'live', 'cover']
+                # More strict for artist search to avoid concert recordings
+                if search_mode == 'artist' and any(b in title for b in BANNED_KEYWORDS):
+                    return False
+                # Less strict for tracks and genres
+                elif search_mode != 'artist' and any(b in title for b in ['karaoke', 'vlog', 'parody', 'reaction', 'tutorial', 'commentary']):
                     return False
                 
                 return True
@@ -121,34 +108,35 @@ class YouTubeDownloader:
             
             final_results = []
             
-            if is_genre_query:
-                # Themed Query strategy for genres
+            if search_mode == 'genre':
                 logger.info(f"[Search] Жанровый запрос, используется стратегия тематических запросов.")
                 THEMES = ["mix", "playlist", "compilation", "hits", "radio"]
                 random.shuffle(THEMES)
-                
-                themed_queries = [f"{query} {theme}" for theme in THEMES]
-                themed_queries.append(query) # Add the raw query as a final fallback
+                themed_queries = [f"{query} {theme}" for theme in THEMES] + [query]
+            elif search_mode == 'artist':
+                logger.info(f"[Search] Запрос по артисту, используется стратегия поиска официальных треков.")
+                THEMES = ["official audio", "topic", ""] # Search for official audio, then artist topic channels, then just the name
+                themed_queries = [f"{query} {theme}".strip() for theme in THEMES]
+            else: # 'track' mode
+                themed_queries = [query]
 
-                for themed_query in themed_queries:
-                    search_query = f"ytsearch{limit}:{themed_query}"
-                    info = await self._extract_info(search_query, opts)
-                    entries = info.get("entries", []) or []
-                    
-                    processed_entries = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-                    if processed_entries:
-                        final_results.extend(processed_entries)
-                    
-                    # If we found a good number of tracks, we can stop searching.
-                    if len(final_results) >= 10:
-                        logger.info(f"[Search] Найдено достаточно треков ({len(final_results)}) с запросом '{themed_query}'.")
-                        break
-            else:
-                # Standard search for specific track/artist queries
-                search_query = f"ytsearch{limit}:{query}"
+            for themed_query in themed_queries:
+                search_query = f"ytsearch{limit}:{themed_query}"
                 info = await self._extract_info(search_query, opts)
                 entries = info.get("entries", []) or []
-                final_results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+                
+                processed_entries = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
+                if processed_entries:
+                    final_results.extend(processed_entries)
+                
+                # For specific searches (artist/track), one successful query is enough.
+                # For genres, we might want to aggregate more, but breaking early is fine if we have enough.
+                if final_results and search_mode != 'genre':
+                    logger.info(f"[Search] Найдены результаты ({len(final_results)}) с запросом '{themed_query}'.")
+                    break
+                if len(final_results) >= 10 and search_mode == 'genre':
+                    logger.info(f"[Search] Найдено достаточно треков ({len(final_results)}) с запросом '{themed_query}'.")
+                    break
 
             logger.info(f"[Search] Найдено и отфильтровано: {len(final_results)} треков.")
             return final_results[:limit]
@@ -158,7 +146,6 @@ class YouTubeDownloader:
             return []
 
     async def download(self, video_id: str) -> DownloadResult:
-        # Acquire semaphore before starting the download process
         async with self.semaphore:
             try:
                 cache_key = f"yt:{video_id}"
@@ -168,12 +155,12 @@ class YouTubeDownloader:
 
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
                 
-                # --- Pre-download Duration Check (as a preliminary filter) ---
                 info_for_check = await self._extract_info(video_url, self._get_opts("search"))
                 track_info_from_download = TrackInfo.from_yt_info(info_for_check)
+                
+                # Check against the absolute max duration
                 if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
                     return DownloadResult(success=False, error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)")
-                # --- End Pre-download Check ---
 
                 loop = asyncio.get_running_loop()
                 download_opts = self._get_opts("download")
@@ -192,7 +179,6 @@ class YouTubeDownloader:
                 return result
             except asyncio.TimeoutError:
                 logger.error(f"Скачивание видео {video_id} превысило таймаут {self._settings.DOWNLOAD_TIMEOUT_S}с.")
-                # Попытка очистить частичные файлы
                 for partial_file in glob.glob(str(self._settings.DOWNLOADS_DIR / f"{video_id}.*")):
                     try: Path(partial_file).unlink(missing_ok=True)
                     except OSError: pass

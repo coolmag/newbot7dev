@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     PLAY_MAX_GENRE_DURATION_S: int = 10800 # Max duration for genre mixes/compilations
     PLAY_MIN_GENRE_DURATION_S: int = 60 # Min duration for genre mixes/compilations
     
-    PLAY_MAX_FILE_SIZE_MB: int = 20
+    PLAY_MAX_FILE_SIZE_MB: int = 200
 
     @field_validator("ADMIN_ID_LIST", mode="before") # Updated to field_validator
     @classmethod

@@ -6,7 +6,7 @@ import time
 import os
 from collections import deque
 from pathlib import Path
-from typing import Optional, Set, Dict, Deque, List, Tuple
+from typing import Optional, Set, Dict, Deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -16,9 +16,9 @@ from telegram.error import TelegramError, BadRequest
 
 from config import Settings
 from models import TrackInfo
-from youtube import YouTubeDownloader
-from keyboards import get_dashboard_keyboard, get_track_keyboard
-from radio_voting import GenreVotingService # Import the new service
+from youtube import YouTubeDownloader, SearchMode # Import SearchMode
+from keyboards import get_dashboard_keyboard
+from radio_voting import GenreVotingService
 
 logger = logging.getLogger("radio")
 
@@ -28,6 +28,7 @@ class RadioSession:
     chat_id: int
     query: str
     chat_type: str
+    search_mode: SearchMode # Explicitly define the search mode
     display_name: Optional[str] = None
     started_at: float = field(default_factory=time.time)
     
@@ -63,27 +64,27 @@ class RadioManager:
         self._voting_service = voting_service
         self._sessions: Dict[int, RadioSession] = {}
 
-    def _get_random_style_query(self, s: RadioSession) -> str:
-        # Use winning genre if available
-        if s.winning_genre:
-            base_genre_key = s.winning_genre
-        else:
-            # Fallback to random if no vote winner
-            genres_data = self._settings.GENRE_DATA
-            if not genres_data:
-                return random.choice(["lofi beats", "pop hits", "rock music"])
-            base_genre_key = random.choice(list(genres_data.keys()))
-
-        main_genre = self._settings.GENRE_DATA.get(base_genre_key, {})
+    def _get_random_style_query(self) -> tuple[str, str]:
+        """Returns a random genre search query and its display name."""
+        genres_data = self._settings.GENRE_DATA
+        if not genres_data:
+            return "lofi beats", "Lo-Fi"
+            
+        base_genre_key = random.choice(list(genres_data.keys()))
+        main_genre = genres_data.get(base_genre_key, {})
+        display_name = main_genre.get("name", base_genre_key)
+        
         subgenres_data = main_genre.get("subgenres", {})
-
         if subgenres_data:
             subgenre_key = random.choice(list(subgenres_data.keys()))
-            return subgenres_data[subgenre_key].get("search")
+            search_query = subgenres_data[subgenre_key].get("search", subgenre_key)
+            display_name = subgenres_data[subgenre_key].get("name", display_name)
+            return search_query, display_name
         
-        return base_genre_key # Fallback to the main key as a search term
+        return base_genre_key, display_name
 
     def status(self) -> dict:
+        # (No changes needed in this method)
         data = {}
         for chat_id, s in self._sessions.items():
             current_info = None
@@ -107,17 +108,23 @@ class RadioManager:
             }
         return {"sessions": data}
 
-    async def start(self, chat_id: int, query: str, chat_type: str, message_id: Optional[int] = None, display_name: Optional[str] = None):
+    async def start(self, chat_id: int, query: str, chat_type: str, search_mode: SearchMode, message_id: Optional[int] = None, display_name: Optional[str] = None):
         await self.stop(chat_id)
+        
+        # If starting in random genre mode, get an initial query right away.
+        if query == "random" and search_mode == "genre":
+            actual_query, actual_display_name = self._get_random_style_query()
+        else:
+            actual_query, actual_display_name = query.strip(), display_name or query.strip()
+            
         session = RadioSession(
             chat_id=chat_id, 
-            query=query.strip(), 
+            query=actual_query,
             chat_type=chat_type,
-            display_name=display_name or query.strip()
+            search_mode=search_mode,
+            display_name=actual_display_name
         )
         self._sessions[chat_id] = session
-        
-        # Initial mode_end_time will be set by _radio_loop after the first vote.
 
         if message_id:
             session.dashboard_msg_id = message_id
@@ -127,20 +134,18 @@ class RadioManager:
             if msg: session.dashboard_msg_id = msg.message_id
         
         asyncio.create_task(self._radio_loop(session))
-        logger.info(f"[{chat_id}] Радио запущено: {query}")
+        logger.info(f"[{chat_id}] Радио запущено: '{session.query}' (режим: {session.search_mode})")
 
     async def stop(self, chat_id: int):
         if session := self._sessions.pop(chat_id, None):
             session.stop_event.set()
             if session.preload_task: session.preload_task.cancel()
-            
-            # End any active voting session for this chat
             await self._voting_service.end_voting_session(chat_id)
             
             paths_to_delete = [session.next_file_path, session.current_file_path]
             for p_str in paths_to_delete:
                 if p_str and Path(p_str).exists():
-                    try: Path(p_str).unlink()
+                    try: Path(p_str).unlink(missing_ok=True)
                     except OSError as e: logger.error(f"Не удалось удалить файл {p_str}: {e}")
             
             await self._update_dashboard(session, status="🛑 Эфир завершен")
@@ -154,51 +159,54 @@ class RadioManager:
             session.skip_event.set()
             await self._update_dashboard(session, status="⏭️ Переключение...")
 
-    # --- Main Radio Loop ---
+    # --- Main Radio Loop (Refactored) ---
     async def _radio_loop(self, s: RadioSession):
         try:
             while not s.stop_event.is_set():
                 s.skip_event.clear()
 
-                # Check if it's time for a vote or current genre block has ended
+                # --- Voting and Genre Change Logic ---
                 if s.mode_end_time is None or datetime.now() >= s.mode_end_time:
-                    # End any pending vote for this chat, retrieve winner
-                    winning_genre_from_vote = await self._voting_service.end_voting(s.chat_id)
-                    if winning_genre_from_vote:
-                        s.winning_genre = winning_genre_from_vote
-                        s.mode_end_time = datetime.now() + timedelta(minutes=60) # Set new 60-minute block
-                        s.playlist.clear() # Clear playlist for new genre
-                        s.fails_in_row = 0
-                        # Update query and display name based on new winning genre
-                        s.query = self._settings.GENRE_DATA.get(s.winning_genre, {}).get("name", s.winning_genre)
+                    winning_genre_key = await self._voting_service.end_voting(s.chat_id)
+                    if winning_genre_key:
+                        s.winning_genre = winning_genre_key
+                        s.mode_end_time = datetime.now() + timedelta(minutes=60)
+                        
+                        # Set the session to the new winning genre
+                        genre_info = self._settings.GENRE_DATA.get(s.winning_genre, {})
+                        s.query = genre_info.get("name", s.winning_genre)
                         s.display_name = s.query
-                        s.skip_event.set() # Skip current track to start the new genre immediately
+                        s.search_mode = 'genre' # Ensure mode is genre
+                        
+                        # Clear state for the new genre
+                        s.playlist.clear()
+                        s.played_ids.clear()
+                        s.fails_in_row = 0
+                        s.skip_event.set() # Immediately skip to start the new genre
 
-                    # Start a new vote cycle for the *next* genre (it will replace existing vote message if exists)
                     await self._voting_service.start_new_voting_cycle(s.chat_id, message_id=s.dashboard_msg_id)
                 
+                # --- Playlist Fetching Logic ---
                 if len(s.playlist) < 5:
-                    current_query = s.query
-                    # If the session is for a random query, get a specific genre query now
-                    if current_query == "random":
-                        current_query = self._get_random_style_query(s)
-                    
-                    if not await self._fetch_playlist(s, current_query):
+                    if not await self._fetch_playlist(s):
                         s.fails_in_row += 1
-                        if s.fails_in_row >= 2:
-                            await self._send_error_message(s.chat_id, f"Не могу найти треки по запросу '{current_query}'. Попробую что-нибудь другое...")
-                            s.winning_genre = None # Reset winning genre to try something random
-                            s.query = "random" # Set back to random to re-trigger random selection
-                            s.fails_in_row = 0
-                        await asyncio.sleep(5)
-                        continue
-                    s.fails_in_row = 0
+                        # If fetching fails consistently for a specific query, stop the radio.
+                        if s.fails_in_row >= 3:
+                            logger.warning(f"[{s.chat_id}] Не удалось найти треки для '{s.query}' 3 раза подряд. Остановка радио.")
+                            await self._send_error_message(s.chat_id, f"❌ Не могу найти треки по запросу «{s.display_name}». Эфир остановлен.")
+                            # The loop will terminate as we call stop() in the finally block.
+                            break
+                        
+                        await asyncio.sleep(5) # Wait before retrying
+                        continue 
+                    s.fails_in_row = 0 # Reset counter on success
                 
                 if not s.playlist:
-                    await self._send_error_message(s.chat_id, "Плейлист пуст, не могу продолжить.")
+                    logger.warning(f"[{s.chat_id}] Плейлист пуст после попытки пополнения.")
                     await asyncio.sleep(10)
                     continue
                 
+                # --- Download and Play Logic ---
                 file_path, track_info = None, None
                 if s.next_file_path and Path(s.next_file_path).exists():
                     file_path, track_info, s.next_file_path, s.next_track_info = s.next_file_path, s.next_track_info, None, None
@@ -220,16 +228,15 @@ class RadioManager:
 
                 await self._update_dashboard(s, status="▶️ В эфире")
                 try:
+                    caption = f"#{s.display_name.replace(' ', '_').replace(':', '')}"
                     with open(file_path, "rb") as f:
                         await self._bot.send_audio(
                             s.chat_id, f, title=track_info.title, performer=track_info.artist,
-                            duration=track_info.duration, caption=f"#{s.display_name.replace(' ', '_')}",
-                            reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
+                            duration=track_info.duration, caption=caption,
                         )
-                    
                     await asyncio.wait_for(s.skip_event.wait(), timeout=track_info.duration)
                 except asyncio.TimeoutError:
-                    logger.info(f"[{s.chat_id}] Трек завершился по таймауту.")
+                    pass # Normal track end
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -239,49 +246,44 @@ class RadioManager:
             logger.info(f"[{s.chat_id}] Цикл радио отменен.")
         finally:
             logger.info(f"[{s.chat_id}] Завершение сессии.")
-            await self.stop(s.chat_id)
+            await self.stop(s.chat_id) # Ensure session is always cleaned up
 
     async def _preload_next_track(self, s: RadioSession):
-        # ... (no changes needed here) ...
         try:
             if not s.playlist: return
             track = s.playlist[0]
-            logger.info(f"[{s.chat_id}] Предзагрузка: {track.title}")
             result = await self._downloader.download(track.identifier)
             if result.success:
                 s.next_file_path, s.next_track_info = result.file_path, result.track_info
-                logger.info(f"[{s.chat_id}] Предзагрузка завершена: {track.title}")
             else:
                 logger.warning(f"[{s.chat_id}] Ошибка предзагрузки: {result.error}")
                 if s.playlist and s.playlist[0].identifier == track.identifier: s.playlist.popleft()
         except Exception as e:
             logger.error(f"[{s.chat_id}] Критическая ошибка в предзагрузке: {e}", exc_info=True)
 
-    async def _fetch_playlist(self, s: RadioSession, query: str) -> bool:
-        # ... (no changes needed here) ...
-        tracks = await self._downloader.search(query, limit=self._settings.MAX_RESULTS)
+    async def _fetch_playlist(self, s: RadioSession) -> bool:
+        tracks = await self._downloader.search(s.query, search_mode=s.search_mode, limit=self._settings.MAX_RESULTS)
         if tracks:
             new = [t for t in tracks if t.identifier not in s.played_ids]
             s.playlist.extend(new)
             logger.info(f"[{s.chat_id}] Плейлист пополнен на {len(new)} треков.")
+            # Reset played IDs if the playlist gets too repetitive, allowing old tracks to be re-added
+            if len(s.played_ids) > 200:
+                s.played_ids.clear()
             return bool(new)
         return False
 
     async def _send_error_message(self, chat_id: int, text: str):
-        # ... (no changes needed here) ...
         try: await self._bot.send_message(chat_id, text)
         except: pass
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
-        # ... (no changes needed here) ...
-        if status_override: status = status_override
-        elif s.current: status = f"▶️ В эфире: {s.current.title[:35]}..."
-        else: status = "⏳ Ожидание..."
+        # (No changes needed)
+        status = status_override or f"▶️ В эфире"
         track = s.current.title if s.current else "..."
         artist = s.current.artist if s.current else "..."
         query = s.display_name or s.query
-        return f"""
-📻 *CYBER RADIO V7*
+        return f"""📻 *CYBER RADIO V7*
 ━━━━━━━━━━━━━━━━━━
 💿 *Трек:* `{track}`
 👤 *Артист:* `{artist}`
@@ -292,7 +294,6 @@ class RadioManager:
 ℹ️ _Статус:_ {status}"""
 
     async def _send_dashboard(self, s: RadioSession, status: str) -> Optional[Message]:
-        # ... (no changes needed here) ...
         text = self._build_dashboard_text(s, status)
         try:
             return await self._bot.send_message(
@@ -304,7 +305,6 @@ class RadioManager:
             return None
 
     async def _update_dashboard(self, s: RadioSession, status: str = None):
-        # ... (no changes needed here) ...
         if not s.dashboard_msg_id: return
         text = self._build_dashboard_text(s, status)
         try:

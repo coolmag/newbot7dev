@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import logging
-import random
 from typing import Optional
 
 from telegram import (
     Update,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    WebAppInfo
 )
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -16,20 +14,19 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     CallbackQueryHandler,
-    filters,
 )
 from telegram.error import BadRequest
 
 from radio import RadioManager
 from config import Settings
-from keyboards import get_dashboard_keyboard, get_track_keyboard, get_genre_voting_keyboard, get_track_search_keyboard
-from youtube import YouTubeDownloader
-from radio_voting import GenreVotingService # Import the new service
-from models import TrackInfo # TrackInfo is used in play_cmd
+from keyboards import get_track_search_keyboard, get_genre_voting_keyboard
+from youtube import YouTubeDownloader, SearchMode # Import SearchMode
+from radio_voting import GenreVotingService
+from models import TrackInfo
 
 logger = logging.getLogger("handlers")
 
-# --- Helper Functions for Genre Keyboards ---
+# --- Helper Functions for Genre Keyboards (No changes needed) ---
 def _generate_main_genres_keyboard(settings: Settings) -> InlineKeyboardMarkup:
     buttons = []
     genres = settings.GENRE_DATA
@@ -68,13 +65,12 @@ def _get_style_search_query(settings: Settings, main_genre_key: str, subgenre_ke
     subgenre = main_genre.get("subgenres", {}).get(subgenre_key, {})
     return subgenre.get("search", subgenre.get("name", "lofi beats"))
 
-def setup_handlers(app: Application, radio: RadioManager, settings: Settings, downloader: YouTubeDownloader, voting_service: GenreVotingService) -> None:
+def setup_handlers(app: Application, radio: RadioManager, settings: Settings, downloader: YouTubeDownloader, voting_service: GenreVotingService) -> None: 
     
-    # --- Command Handlers ---
+    # --- Command Handlers (Refactored) ---
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user.first_name
-        text = f"""👋 *Привет, {user}!*
-        
+        text = f"""👋 *Привет, {user}!*        
 Я — *Cyber Radio v7*. Я кручу музыку 24/7.
 
 👇 *Выбери категорию или открой плеер:*"""
@@ -95,7 +91,8 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         search_msg = await update.message.reply_text(f"🔍 Ищу: `{query}`...", parse_mode=ParseMode.MARKDOWN)
         
         try:
-            tracks = await downloader.search(query, limit=10)
+            # Explicitly set search_mode to 'track'
+            tracks = await downloader.search(query, search_mode='track', limit=10)
         except Exception as e:
             logger.error(f"Ошибка при поиске трека по команде /play: {e}", exc_info=True)
             await search_msg.edit_text("❌ Произошла ошибка во время поиска.")
@@ -121,17 +118,20 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             return
             
         display_name = f"Волна по артисту: {query}"
-        await radio.start(chat.id, query, chat.type, display_name=display_name)
+        # Explicitly set search_mode to 'artist'
+        await radio.start(chat.id, query, chat.type, search_mode='artist', display_name=display_name)
         try:
             await update.message.delete()
         except: pass
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Starts a radio session with a genre query."""
         chat = update.effective_chat
         query = " ".join(context.args) if context.args else "random"
         try: await update.message.delete()
         except: pass
-        await radio.start(chat.id, query, chat.type)
+        # Explicitly set search_mode to 'genre'
+        await radio.start(chat.id, query, chat.type, search_mode='genre')
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)
@@ -141,7 +141,6 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         await radio.skip(update.effective_chat.id)
 
     async def vote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handles the /vote command to show the current voting poll."""
         chat_id = update.effective_chat.id
         current_voting_session = voting_service.get_session(chat_id)
         if current_voting_session and current_voting_session.is_vote_in_progress:
@@ -153,7 +152,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         else:
             await update.message.reply_text("⛔ В данный момент голосование неактивно.")
     
-    # --- Callback Query Handler ---
+    # --- Callback Query Handler (Refactored) ---
     async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         try: await query.answer()
@@ -202,9 +201,10 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             _, main_genre_key, subgenre_key = data.split(":")
             subgenre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("subgenres", {}).get(subgenre_key, {}).get("name", "Unknown")
             search_query = _get_style_search_query(settings, main_genre_key, subgenre_key)
-            await radio.start(chat_id, search_query, chat_type, message_id=query.message.message_id, display_name=subgenre_name)
-        elif data.startswith("vote_genre:"): # Changed from VoteCallback.PREFIX
-            genre_key = data.removeprefix("vote_genre:") # Changed from VoteCallback.PREFIX
+            # Explicitly set search_mode to 'genre'
+            await radio.start(chat_id, search_query, chat_type, search_mode='genre', message_id=query.message.message_id, display_name=subgenre_name)
+        elif data.startswith("vote_genre:"):
+            genre_key = data.removeprefix("vote_genre:")
             user_id = query.from_user.id
             if await voting_service.register_vote(chat_id, genre_key, user_id):
                 await query.answer("✅ Ваш голос принят!")
@@ -215,13 +215,12 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             current_voting_session = voting_service.get_session(chat_id)
             if current_voting_session and current_voting_session.is_vote_in_progress:
                 try:
-                    # Reply with a new message showing the current poll
                     await query.message.reply_text(
                         "📢 **Идет голосование за жанр!**",
                         reply_markup=get_genre_voting_keyboard(current_voting_session.current_vote_genres, current_voting_session.votes),
                         parse_mode=ParseMode.MARKDOWN
                     )
-                except BadRequest: pass # In case of issues sending the message
+                except BadRequest: pass
             else:
                 await query.answer("⛔ В данный момент голосование неактивно.", show_alert=True)
 
@@ -230,13 +229,13 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         elif data == "cancel_menu": await query.edit_message_text("Меню закрыто.", reply_markup=None)
         elif data == "noop": pass
 
-    # --- Register Handlers ---
+    # --- Register Handlers (No changes needed) ---
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("menu", start_cmd))
     app.add_handler(CommandHandler("play", play_cmd))
     app.add_handler(CommandHandler("artist", artist_cmd))
     app.add_handler(CommandHandler("vote", vote_cmd))
-    app.add_handler(CommandHandler("radio", radio_cmd)) # Removed filters.User(settings.ADMIN_ID_LIST)
+    app.add_handler(CommandHandler("radio", radio_cmd))
     app.add_handler(CommandHandler("stop", stop_cmd))
     app.add_handler(CommandHandler("skip", skip_cmd))
     app.add_handler(CallbackQueryHandler(button_callback))
