@@ -209,6 +209,7 @@ class RadioManager:
                             s.search_mode = 'genre' # Default to genre search on auto-switch
                             s.fails_in_row = 0
                             s.playlist.clear()
+                            s.played_ids.clear() # 🆕 Clear played IDs to allow tracks from new genre
                         
                         await asyncio.sleep(5) # Wait before retrying with the new query
                         continue 
