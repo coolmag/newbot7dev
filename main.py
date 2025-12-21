@@ -92,11 +92,15 @@ async def download_playlist_in_background(
 
 async def keep_alive_task_func():
     """A task to ping the health check endpoint to keep the service alive on some platforms."""
-    # Pinging the internal localhost address is more reliable than the external BASE_URL.
-    health_url = "http://localhost:8080/api/health"
+    # Pinging the internal 127.0.0.1 address is more reliable than localhost.
+    health_url = "http://127.0.0.1:8080/api/health"
     consecutive_failures = 0
     
     while True:
+        # Wait 30 seconds on first run before starting the loop
+        if consecutive_failures == 0:
+            await asyncio.sleep(30)
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(health_url)
@@ -302,10 +306,10 @@ async def get_player_playlist(
         raise HTTPException(status_code=400, detail="Query parameter is required and cannot be empty.")
 
     try:
-        # 🆕 Поиск с таймаутом
+        # 💡 Use 'genre' mode for broad web app queries to find mixes and compilations
         tracks = await asyncio.wait_for(
-            downloader.search(query, search_mode='track', limit=15),
-            timeout=20.0  # Максимум 20 секунд на поиск
+            downloader.search(query, search_mode='genre', limit=15),
+            timeout=20.0
         )
         
         if not tracks:
@@ -319,7 +323,7 @@ async def get_player_playlist(
             
             result = await asyncio.wait_for(
                 downloader.download(first_track.identifier),
-                timeout=45.0  # 🆕 45 секунд на первый трек
+                timeout=45.0
             )
             
             if not result.success:
