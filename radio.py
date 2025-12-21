@@ -184,7 +184,8 @@ class RadioManager:
                         s.fails_in_row = 0
                         s.skip_event.set() # Immediately skip to start the new genre
 
-                    await self._voting_service.start_new_voting_cycle(s.chat_id, message_id=s.dashboard_msg_id)
+                            # Start a new vote cycle for the *next* genre. It will send its own message.
+                    await self._voting_service.start_new_voting_cycle(s.chat_id)
                 
                 # --- Playlist Fetching Logic ---
                 if len(s.playlist) < 5:
@@ -233,6 +234,7 @@ class RadioManager:
                         await self._bot.send_audio(
                             s.chat_id, f, title=track_info.title, performer=track_info.artist,
                             duration=track_info.duration, caption=caption,
+                            reply_markup=get_track_keyboard(self._settings.BASE_URL, s.chat_id)
                         )
                     await asyncio.wait_for(s.skip_event.wait(), timeout=track_info.duration)
                 except asyncio.TimeoutError:
