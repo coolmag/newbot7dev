@@ -172,7 +172,7 @@ class YouTubeDownloader:
                             
                             if processed:
                                 logger.info(f"[Search] Найдено {len(processed)} треков с '{themed_query}'")
-                                break  # Достаточно одного успешного запроса
+                                # No break, continue to gather more tracks from other queries
                         except Exception as e:
                             logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
                             continue
