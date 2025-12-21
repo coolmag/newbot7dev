@@ -49,7 +49,6 @@ def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> Inlin
     keyboard = [
         [webapp_btn],
         [
-            InlineKeyboardButton("⏮️", callback_data="noop"), 
             InlineKeyboardButton("⏹️ Стоп", callback_data="stop_radio"),
             InlineKeyboardButton("⏭️ Скип", callback_data="skip_track"),
         ],

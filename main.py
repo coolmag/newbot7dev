@@ -19,14 +19,14 @@ from telegram.ext import Application
 from auth import get_validated_user, WebAppUser
 from config import Settings
 from logging_setup import setup_logging
-from cache import CacheService
+from database import DatabaseService
 from youtube import YouTubeDownloader
 from models import Source, TrackInfo
 from radio import RadioManager
 from handlers import setup_handlers
 from dependencies import (
     get_settings_dep,
-    get_cache_service_dep,
+    get_database_service_dep,
     get_downloader_dep,
     get_telegram_app_dep,
     get_radio_manager_dep,
@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI):
     logger.info("⚡ Application starting up...")
 
     settings = get_settings_dep()
-    cache = get_cache_service_dep()
+    db_service = get_database_service_dep()
     tg_app = get_telegram_app_dep()
     radio = get_radio_manager_dep()
     downloader = get_downloader_dep()
@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
         settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
 
     # Инициализация сервисов
-    await cache.initialize()
+    await db_service.initialize()
     
     setup_handlers(tg_app, radio, settings, downloader, voting_service)
     await tg_app.initialize()
@@ -203,7 +203,7 @@ async def lifespan(app: FastAPI):
     await tg_app.shutdown()
     
     # Закрытие кеша
-    await cache.close()
+    await db_service.close()
     
     logger.info("✅ Application shutdown complete.")
 
@@ -403,7 +403,7 @@ async def get_player_playlist(
 @app.get("/audio/{track_id}")
 async def get_audio(
     track_id: str,
-    cache: CacheService = Depends(get_cache_service_dep)
+    db_service: DatabaseService = Depends(get_database_service_dep)
 ):
     """
     🆕 УЛУЧШЕННАЯ обработка запросов аудио с graceful degradation
@@ -415,7 +415,7 @@ async def get_audio(
             raise HTTPException(status_code=400, detail="Invalid track ID format")
         
         # Попытка получить из кеша
-        cached_result = await cache.get(f"yt:{track_id}", Source.YOUTUBE)
+        cached_result = await db_service.get(f"yt:{track_id}", Source.YOUTUBE)
         
         # Проверки наличия файла
         if cached_result and cached_result.file_path:
@@ -436,7 +436,7 @@ async def get_audio(
                 # Файл в кеше, но отсутствует на диске
                 logger.warning(f"[Audio] Файл из кеша отсутствует: {file_path}")
                 # Удаляем битую запись из кеша
-                asyncio.create_task(cache.blacklist_track_id(track_id))
+                asyncio.create_task(db_service.blacklist_track_id(track_id))
         
         # Файл не найден - возвращаем информативную ошибку
         logger.info(f"[Audio] Трек {track_id} не найден в кеше")

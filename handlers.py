@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from typing import Optional
 
 from telegram import (
@@ -253,7 +254,27 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
             return
 
         if data == "show_main_genres":
-            await query.edit_message_text("💿 *Каталог жанров:*", parse_mode=ParseMode.MARKDOWN, reply_markup=_generate_main_genres_keyboard(settings))
+            try:
+                # First, try to edit. If it's a text message, this is fast.
+                await query.edit_message_text(
+                    "💿 *Каталог жанров:*",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=_generate_main_genres_keyboard(settings)
+                )
+            except BadRequest as e:
+                # If it fails because it's a media message, delete and send new.
+                if "There is no text in the message to edit" in str(e):
+                    await query.message.delete()
+                    await query.message.chat.send_message(
+                        "💿 *Каталог жанров:*",
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=_generate_main_genres_keyboard(settings)
+                    )
+                else:
+                    # Re-raise other bad requests
+                    raise e
+            return
+
         elif data.startswith("genre_main:"):
             main_genre_key = data.removeprefix("genre_main:")
             main_genre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("name", "Жанр")
@@ -288,7 +309,18 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
 
         elif data == "stop_radio": await radio.stop(chat_id)
         elif data == "skip_track": await radio.skip(chat_id)
-        elif data == "cancel_menu": await query.edit_message_text("Меню закрыто.", reply_markup=None)
+        
+        elif data == "cancel_menu":
+            try:
+                await query.message.delete()
+            except BadRequest:
+                # If deletion fails, edit to a closed state as a fallback
+                try:
+                    await query.edit_message_text("Меню закрыто.", reply_markup=None)
+                except BadRequest: # If that also fails, just ignore.
+                    pass
+            return
+            
         elif data == "noop": pass
 
     # --- Register Handlers (No changes needed) ---

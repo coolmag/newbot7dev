@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Literal
 import yt_dlp
 from config import Settings
 from models import DownloadResult, Source, TrackInfo
-from cache import CacheService
+from database import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,9 @@ class SilentLogger:
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
-    def __init__(self, settings: Settings, cache_service: CacheService):
+    def __init__(self, settings: Settings, db_service: DatabaseService):
         self._settings = settings
-        self._cache = cache_service
+        self._db = db_service
         # 🆕 Увеличен семафор для предотвращения deadlock
         self.semaphore = asyncio.Semaphore(10)  # Было 3, теперь 10
         # 🆕 Отдельный семафор для поиска (чтобы не блокировать скачивания)
@@ -122,11 +122,11 @@ class YouTubeDownloader:
 
                     # Определяем лимиты длительности
                     if search_mode == 'genre':
-                        min_dur = self._settings.PLAY_MIN_GENRE_DURATION_S
-                        max_dur = self._settings.PLAY_MAX_GENRE_DURATION_S
-                    else:
-                        min_dur = self._settings.PLAY_MIN_SONG_DURATION_S
-                        max_dur = self._settings.PLAY_MAX_SONG_DURATION_S
+                        min_dur = self._settings.GENRE_MIN_DURATION_S
+                        max_dur = self._settings.GENRE_MAX_DURATION_S
+                    else: # 'track' or 'artist'
+                        min_dur = self._settings.TRACK_MIN_DURATION_S
+                        max_dur = self._settings.TRACK_MAX_DURATION_S
 
                     if not (min_dur <= duration <= max_dur):
                         return False
@@ -136,7 +136,7 @@ class YouTubeDownloader:
                     
                     # Более строгая фильтрация для артистов
                     if search_mode == 'artist':
-                        BANNED_KEYWORDS.extend(['live', 'cover', 'concert', 'performance'])
+                        BANNED_KEYWORDS.extend(['cover'])
                     
                     if any(keyword in title for keyword in BANNED_KEYWORDS):
                         return False
@@ -184,13 +184,16 @@ class YouTubeDownloader:
                             continue
                 
                 elif search_mode == 'artist':
-                    # Для артистов: точный поиск официальных треков
+                    # Для артистов: более глубокий поиск для разнообразия
                     logger.info(f"[Search] Поиск по артисту: {query}")
                     
-                    # 🆕 Упрощенная стратегия
-                    for suffix in ["official audio", "topic", ""]:
+                    # 🆕 Расширенные суффиксы для более разнообразных результатов
+                    for suffix in ["official audio", "topic", "", "live", "album", "remix"]:
+                        if len(final_results) >= limit:
+                            break
+
                         themed_query = f"{query} {suffix}".strip()
-                        search_query = f"ytsearch{limit}:{themed_query}"
+                        search_query = f"ytsearch10:{themed_query}" # Ищем по 10 на каждый суффикс
                         
                         try:
                             info = await self._extract_info(search_query, opts)
@@ -198,10 +201,13 @@ class YouTubeDownloader:
                             
                             processed = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
                             
-                            if processed:
-                                final_results.extend(processed)
-                                logger.info(f"[Search] Найдено {len(processed)} треков артиста с '{themed_query}'")
-                                break  # Первый успешный = достаточно
+                            # 🆕 Добавляем только уникальные треки
+                            new_tracks = [p for p in processed if p.identifier not in {r.identifier for r in final_results}]
+                            final_results.extend(new_tracks)
+                            
+                            if new_tracks:
+                                logger.info(f"[Search] Найдено {len(new_tracks)} треков артиста с '{themed_query}'")
+
                         except Exception as e:
                             logger.warning(f"[Search] Ошибка поиска артиста '{themed_query}': {e}")
                             continue
@@ -233,7 +239,7 @@ class YouTubeDownloader:
             try:
                 # Проверка кеша
                 cache_key = f"yt:{video_id}"
-                cached = await self._cache.get(cache_key, Source.YOUTUBE)
+                cached = await self._db.get(cache_key, Source.YOUTUBE)
                 
                 if cached and cached.file_path and Path(cached.file_path).exists():
                     logger.debug(f"[Download] Использование кеша для {video_id}")
@@ -243,7 +249,7 @@ class YouTubeDownloader:
                     logger.warning(f"[Download] Файл из кеша отсутствует для {video_id}, удаляем запись")
                     # Не используем await для delete - это не критично
                     try:
-                        asyncio.create_task(self._cache.blacklist_track_id(video_id))
+                        asyncio.create_task(self._db.blacklist_track_id(video_id))
                     except:
                         pass
 
@@ -258,7 +264,7 @@ class YouTubeDownloader:
                     track_info_from_download = TrackInfo.from_yt_info(info_for_check)
                     
                     # Проверка длительности
-                    if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
+                    if track_info_from_download.duration and track_info_from_download.duration > self._settings.GENRE_MAX_DURATION_S:
                         return DownloadResult(
                             success=False, 
                             error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)"
@@ -315,7 +321,7 @@ class YouTubeDownloader:
                         )
                         
                         # Сохраняем в кеш
-                        await self._cache.set(cache_key, Source.YOUTUBE, result)
+                        await self._db.set(cache_key, Source.YOUTUBE, result)
                         logger.info(f"[Download] Успешно скачан {video_id} (попытка {attempt + 1})")
                         return result
                         

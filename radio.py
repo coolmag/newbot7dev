@@ -296,11 +296,13 @@ class RadioManager:
                         s.dashboard_msg_id = audio_msg.message_id
                     
                     s.animation_task = asyncio.create_task(self._animation_loop(s))
-                    
-                    # 🆕 Enforce a strict 90-second interval between tracks
-                    await asyncio.wait_for(s.skip_event.wait(), timeout=90.0)
+
+                    # Ожидаем длительность трека или команду skip.
+                    # Добавляем 2 секунды буфера на случай задержек.
+                    track_timeout = s.current.duration + 2.0 if s.current and s.current.duration > 0 else 90.0
+                    await asyncio.wait_for(s.skip_event.wait(), timeout=track_timeout)
                 except asyncio.TimeoutError:
-                    pass # Normal 90-second interval end
+                    pass # Обычное завершение трека по таймауту
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

@@ -44,16 +44,18 @@ class Settings(BaseSettings):
     CACHE_TTL_DAYS: int = 7
     
     # --- Media Constraints ---
-    RADIO_MAX_DURATION_S: int = 900 # Currently unused, consider removing or adapting
-    RADIO_MIN_DURATION_S: int = 30 # Currently unused, consider removing or adapting
-
-    PLAY_MAX_SONG_DURATION_S: int = 900 # Max duration for individual songs (e.g., /play command)
-    PLAY_MIN_SONG_DURATION_S: int = 60 # Min duration for individual songs
-
-    PLAY_MAX_GENRE_DURATION_S: int = 900 # Max duration for genre mixes/compilations
-    PLAY_MIN_GENRE_DURATION_S: int = 60 # Min duration for genre mixes/compilations
+    # Unified settings for track duration and file size limits
     
-    PLAY_MAX_FILE_SIZE_MB: int = 25
+    # For 'track' and 'artist' search modes
+    TRACK_MIN_DURATION_S: int = 60
+    TRACK_MAX_DURATION_S: int = 900  # 15 minutes
+
+    # For 'genre' search mode (can be longer, like mixes)
+    GENRE_MIN_DURATION_S: int = 60
+    GENRE_MAX_DURATION_S: int = 1800 # 30 minutes
+
+    # General file size limit
+    PLAY_MAX_FILE_SIZE_MB: int = 30
 
     @field_validator("ADMIN_ID_LIST", mode="before") # Updated to field_validator
     @classmethod
