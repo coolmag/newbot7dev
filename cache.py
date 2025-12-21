@@ -126,8 +126,9 @@ class CacheService:
                 row = await cursor.fetchone()
                 if not row: return None
                 
-                # Use Pydantic v2 model_validate for deserialization
-                return DownloadResult.model_validate_json(row["result_json"])
+                # Pydantic v2 model_validate for deserialization
+                json_data = json.loads(row["result_json"])
+                return DownloadResult.model_validate(json_data)
         except Exception as e:
             logger.warning(f"Ошибка при чтении из кэша: {e}")
             return None
@@ -146,6 +147,24 @@ class CacheService:
         except Exception as e:
             logger.warning(f"Ошибка при записи в кэш: {e}")
 
+    async def delete(self, cache_key: str):
+        """
+        🆕 Deletes a cache entry by key.
+        """
+        if not self._is_initialized:
+            return
+        
+        try:
+            # Преобразуем ключ в ID (как в get)
+            cache_id = self._get_cache_id(cache_key, Source.YOUTUBE) # assuming Source.YOUTUBE for key generation
+            
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("DELETE FROM cache WHERE id = ?", (cache_id,))
+                await db.commit()
+                logger.debug(f"Удалена запись из кеша: {cache_key}")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении из кеша '{cache_key}': {e}", exc_info=True)
+            
     # --- Методы для рейтингов ---
 
     async def update_rating(self, user_id: int, track_id: str, rating: int) -> Tuple[int, int]:

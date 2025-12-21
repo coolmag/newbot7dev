@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     RETRY_DELAY_S: float = 5.0
     MAX_RESULTS: int = 30
     
+    # 🆕 Новые настройки для улучшенной стабильности
+    MAX_CONCURRENT_DOWNLOADS: int = 10  # Увеличен с 3
+    MAX_CONCURRENT_SEARCHES: int = 5    # Новая настройка
+    SEARCH_TIMEOUT_S: int = 20          # Таймаут для поиска
+    DOWNLOAD_RETRY_ATTEMPTS: int = 2    # Количество повторов
+    KEEP_ALIVE_INTERVAL_S: int = 240    # Интервал keep-alive
+    
     # --- Cache Settings ---
     CACHE_TTL_DAYS: int = 7
     

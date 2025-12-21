@@ -48,7 +48,9 @@ class GenreVotingService:
         session.vote_task = asyncio.create_task(self._run_vote_lifecycle(session))
 
     async def _run_vote_lifecycle(self, s: GenreVotingSession):
-        """Manages the voting process, always sending a new message."""
+        """
+        🆕 Manages the voting process with improved error handling.
+        """
         s.is_vote_in_progress = True
         s.votes = {}
         
@@ -59,7 +61,12 @@ class GenreVotingService:
         logger.info(f"[{s.chat_id}] Начинается голосование за жанр: {s.current_vote_genres}")
 
         try:
-            vote_msg_text = f"📢 **Началось голосование за жанр!**\n\nВыберите, что будет играть следующий час. Голосование продлится 3 минуты."
+            vote_msg_text = (
+                "📢 **Началось голосование за жанр!**\n\n"
+                "Выберите, что будет играть следующий час. "
+                "Голосование продлится 3 минуты."
+            )
+            
             vote_msg = await self._bot.send_message(
                 chat_id=s.chat_id,
                 text=vote_msg_text,
@@ -67,12 +74,25 @@ class GenreVotingService:
                 parse_mode=ParseMode.MARKDOWN,
             )
             s.vote_message_id = vote_msg.message_id
+            
         except Exception as e:
             logger.error(f"[{s.chat_id}] Не удалось отправить сообщение для голосования: {e}")
             s.is_vote_in_progress = False
             return
 
-        await asyncio.sleep(180)  # 3 minutes for voting
+        # 🆕 Ждем с периодическим обновлением клавиатуры
+        try:
+            for _ in range(6):  # 6 итераций по 30 секунд = 3 минуты
+                await asyncio.sleep(30)
+                if not s.is_vote_in_progress:
+                    break
+                # Обновляем счетчик голосов
+                await self._update_vote_keyboard(s)
+        except asyncio.CancelledError:
+            logger.info(f"[{s.chat_id}] Голосование отменено")
+            raise
+        
+        # Завершаем голосование
         if s.is_vote_in_progress:
             await self.end_voting(s.chat_id)
 

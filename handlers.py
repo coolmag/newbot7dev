@@ -85,53 +85,115 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         """Handles the /play command to search for a single track."""
         query = " ".join(context.args)
         if not query:
-            await update.message.reply_text("💬 Укажите название трека или имя исполнителя.\n\nНапример: `/play Queen - Bohemian Rhapsody`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(
+                "💬 Укажите название трека или имя исполнителя.\n\n"
+                "Например: `/play Queen - Bohemian Rhapsody`", 
+                parse_mode=ParseMode.MARKDOWN
+            )
             return
 
-        search_msg = await update.message.reply_text(f"🔍 Ищу: `{query}`...", parse_mode=ParseMode.MARKDOWN)
+        search_msg = await update.message.reply_text(
+            f"🔎 Ищу: `{query}`...", 
+            parse_mode=ParseMode.MARKDOWN
+        )
         
         try:
-            # Explicitly set search_mode to 'track'
-            tracks = await downloader.search(query, search_mode='track', limit=10)
+            # 🆕 Добавлен таймаут
+            tracks = await asyncio.wait_for(
+                downloader.search(query, search_mode='track', limit=10),
+                timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            await search_msg.edit_text("⏱️ Поиск занял слишком много времени. Попробуйте снова.")
+            return
         except Exception as e:
             logger.error(f"Ошибка при поиске трека по команде /play: {e}", exc_info=True)
             await search_msg.edit_text("❌ Произошла ошибка во время поиска.")
             return
 
         if not tracks:
-            await search_msg.edit_text(f"❌ Ничего не найдено по запросу: `{query}`")
+            await search_msg.edit_text(f"❌ Ничего не найдено по запросу: `{query}`", parse_mode=ParseMode.MARKDOWN)
             return
 
+        # 🆕 Ограничиваем длину вывода
         text = "**Вот что я нашел. Выберите трек:**\n\n"
-        for i, track in enumerate(tracks, 1):
-            text += f"{i}. `{track.title} - {track.artist}` ({track.format_duration()})\n"
+        for i, track in enumerate(tracks[:10], 1):  # Максимум 10
+            # Обрезаем длинные названия
+            title = track.title[:40] + "..." if len(track.title) > 40 else track.title
+            artist = track.artist[:30] + "..." if len(track.artist) > 30 else track.artist
+            text += f"{i}. `{title} - {artist}` ({track.format_duration()})\n"
         
-        reply_markup = get_track_search_keyboard(tracks)
+        reply_markup = get_track_search_keyboard(tracks[:10])  # Только 10
         await search_msg.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         
     async def artist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Starts a radio session for a specific artist."""
         chat = update.effective_chat
         query = " ".join(context.args)
+        
         if not query:
-            await update.message.reply_text("💬 Укажите имя исполнителя.\n\nНапример: `/artist Rammstein`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(
+                "💬 Укажите имя исполнителя.\n\n"
+                "Например: `/artist Rammstein`", 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        
+        # 🆕 Валидация длины запроса
+        if len(query) > 100:
+            await update.message.reply_text("❌ Слишком длинное имя артиста (максимум 100 символов)")
             return
             
         display_name = f"Волна по артисту: {query}"
-        # Explicitly set search_mode to 'artist'
-        await radio.start(chat.id, query, chat.type, search_mode='artist', display_name=display_name)
+        
         try:
-            await update.message.delete()
-        except: pass
+            # 🆕 Добавлено уведомление о старте
+            status_msg = await update.message.reply_text(f"🎤 Запускаю радио по артисту {query}...")
+            
+            await radio.start(
+                chat.id, 
+                query, 
+                chat.type, 
+                search_mode='artist',  # Явно указываем режим
+                display_name=display_name
+            )
+            
+            # Удаляем статусное сообщение и команду
+            try:
+                await status_msg.delete()
+                await update.message.delete()
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Ошибка запуска радио по артисту: {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Не удалось запустить радио: {str(e)}")
 
     async def radio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Starts a radio session with a genre query."""
         chat = update.effective_chat
         query = " ".join(context.args) if context.args else "random"
-        try: await update.message.delete()
-        except: pass
-        # Explicitly set search_mode to 'genre'
-        await radio.start(chat.id, query, chat.type, search_mode='genre')
+        
+        # 🆕 Валидация
+        if len(query) > 100:
+            await update.message.reply_text("❌ Слишком длинный запрос (максимум 100 символов)")
+            return
+        
+        try:
+            await update.message.delete()
+        except:
+            pass
+        
+        try:
+            await radio.start(
+                chat.id, 
+                query, 
+                chat.type, 
+                search_mode='genre'  # Явно указываем режим
+            )
+        except Exception as e:
+            logger.error(f"Ошибка запуска радио: {e}", exc_info=True)
+            await update.effective_chat.send_message(f"❌ Не удалось запустить радио: {str(e)}")
 
     async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await radio.stop(update.effective_chat.id)

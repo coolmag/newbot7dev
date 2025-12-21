@@ -8,16 +8,34 @@ from models import VoteCallback, TrackInfo
 settings = get_settings()
 
 def get_track_search_keyboard(tracks: List[TrackInfo]) -> InlineKeyboardMarkup:
-    """Creates a keyboard with a list of tracks for the user to choose from."""
-    buttons = []
-    for i, track in enumerate(tracks):
-        # Callback data format is "track_choice:<youtube_id>"
-        callback_data = f"track_choice:{track.identifier}"
-        buttons.append(InlineKeyboardButton(text=str(i + 1), callback_data=callback_data))
+    """
+    🆕 Creates a keyboard with a list of tracks for the user to choose from.
+    Improved with better layout and validation.
+    """
+    if not tracks:
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="cancel_search")
+        ]])
     
-    # Arrange buttons in rows of 5
+    buttons = []
+    # 🆕 Ограничиваем до 10 треков максимум
+    for i, track in enumerate(tracks[:10], 1):
+        callback_data = f"track_choice:{track.identifier}"
+        # 🆕 Проверяем длину callback_data (макс 64 байта)
+        if len(callback_data.encode('utf-8')) <= 64:
+            buttons.append(InlineKeyboardButton(text=str(i), callback_data=callback_data))
+        else:
+            logger.warning(f"Пропущен трек с длинным ID: {track.identifier}")
+    
+    if not buttons:
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Ошибка", callback_data="cancel_search")
+        ]])
+    
+    # 🆕 Улучшенная раскладка: 5 кнопок в ряд
     keyboard = [buttons[i:i + 5] for i in range(0, len(buttons), 5)]
     keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_search")])
+    
     return InlineKeyboardMarkup(keyboard)
 
 def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> InlineKeyboardMarkup:
