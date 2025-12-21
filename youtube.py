@@ -57,9 +57,10 @@ class YouTubeDownloader:
 
         if mode == "search":
             opts.update({
-                "extract_flat": "in_playlist", 
+                "noplaylist": False, # 🆕 Разрешаем обработку плейлистов
+                "extract_flat": True, # 🆕 Получаем базовую информацию для всего (видео, плейлисты)
                 "skip_download": True,
-                "socket_timeout": 10,  # 🆕 Меньший таймаут для поиска
+                "socket_timeout": 10,
             })
         elif mode == "download":
             opts.update({
@@ -150,38 +151,81 @@ class YouTubeDownloader:
                 
                 # 🆕 ОПТИМИЗИРОВАННЫЕ СТРАТЕГИИ ПОИСКА
                 if search_mode == 'genre':
-                    # Для жанров: меньше запросов, больше результатов
-                    logger.info(f"[Search] Жанровый поиск, стратегия: тематические запросы.")
+                    logger.info(f"[Search] Жанровый поиск, стратегия: приоритет плейлистов.")
                     
-                    # 💡 Упрощенная и более надежная стратегия
-                    queries_to_try = [
-                        query,              # 1. Сначала точный запрос (e.g., "darkwave playlist")
-                        f"{query} mix",      # 2. Потом с "mix"
-                        f"{query} playlist"  # 3. Потом с "playlist"
-                    ]
-                    
-                    for themed_query in queries_to_try:
-                        if len(final_results) >= limit:
-                            break
-                            
-                        search_query = f"ytsearch{limit}:{themed_query}"
-                        
-                        try:
-                            info = await self._extract_info(search_query, opts)
-                            entries = info.get("entries", []) or []
-                            
-                            processed = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-                            
-                            # Добавляем только уникальные треки
-                            new_tracks = [p for p in processed if p.identifier not in {r.identifier for r in final_results}]
-                            final_results.extend(new_tracks)
-                            
-                            if new_tracks:
-                                logger.info(f"[Search] Найдено {len(new_tracks)} новых треков с '{themed_query}'")
+                    def process_entries(entries_list: List[Dict[str, Any]]) -> List[TrackInfo]:
+                        processed = []
+                        for e in entries_list:
+                            if filter_entry(e):
+                                # Check for duplicates before adding
+                                if e.get("id") not in {r.identifier for r in final_results}:
+                                    processed.append(TrackInfo.from_yt_info(e))
+                        return processed
 
-                        except Exception as e:
-                            logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
-                            continue
+                    playlist_opts = opts.copy()
+                    playlist_opts['default_search'] = 'ytsearchplaylist'
+                    playlist_opts['noplaylist'] = False # Explicitly allow playlist processing
+                    playlist_opts['extract_flat'] = True # Get basic info for playlists
+                    
+                    # 1. Попытка поиска плейлистов
+                    try:
+                        playlist_search_query = f"ytsearchplaylist5:{query} playlist" # Ищем до 5 плейлистов
+                        playlist_info = await self._extract_info(playlist_search_query, playlist_opts)
+                        
+                        if playlist_info and playlist_info.get('entries'):
+                            logger.info(f"[Search] Найдено {len(playlist_info['entries'])} плейлистов по запросу '{query}'.")
+                            for playlist_entry in playlist_info['entries']:
+                                if len(final_results) >= limit:
+                                    break
+                                if playlist_entry.get('_type') == 'playlist' and playlist_entry.get('url'):
+                                    logger.info(f"[Search] Извлекаю треки из плейлиста: {playlist_entry['title']}")
+                                    try:
+                                        # Извлекаем данные из самого плейлиста, а не через search
+                                        # Для этого нужен ytdl_opts с extract_flat: False для получения entries
+                                        playlist_content_opts = self._get_opts("search").copy()
+                                        playlist_content_opts['extract_flat'] = False # Get full entries for playlist content
+                                        playlist_content_opts['noplaylist'] = False # Ensure it handles it as a playlist URL
+                                        
+                                        content_info = await self._extract_info(playlist_entry['url'], playlist_content_opts)
+                                        
+                                        if content_info and content_info.get('entries'):
+                                            newly_processed = process_entries(content_info['entries'])
+                                            final_results.extend(newly_processed)
+                                            logger.info(f"[Search] Добавлено {len(newly_processed)} треков из плейлиста '{playlist_entry['title']}'.")
+                                    except Exception as e:
+                                        logger.warning(f"[Search] Ошибка при извлечении треков из плейлиста '{playlist_entry['title']}': {e}")
+
+                    except Exception as e:
+                        logger.warning(f"[Search] Ошибка поиска плейлистов для '{query}': {e}")
+
+                    # 2. Fallback: поиск тематических треков, если плейлисты не дали достаточно результатов
+                    if len(final_results) < limit:
+                        logger.info(f"[Search] Недостаточно треков из плейлистов, перехожу к тематическому поиску.")
+                        
+                        queries_to_try = [
+                            query,
+                            f"{query} mix",
+                            f"{query} playlist"
+                        ]
+                        
+                        for themed_query in queries_to_try:
+                            if len(final_results) >= limit:
+                                break
+                                
+                            search_query = f"ytsearch{limit}:{themed_query}"
+                            try:
+                                info = await self._extract_info(search_query, opts) # Use general opts here
+                                entries = info.get("entries", []) or []
+                                
+                                newly_processed = process_entries(entries)
+                                final_results.extend(newly_processed)
+                                
+                                if newly_processed:
+                                    logger.info(f"[Search] Найдено {len(newly_processed)} новых треков с '{themed_query}'")
+
+                            except Exception as e:
+                                logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
+                                continue
                 
                 elif search_mode == 'artist':
                     # Для артистов: более глубокий поиск для разнообразия
