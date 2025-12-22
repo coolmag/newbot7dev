@@ -14,7 +14,7 @@ class DownloadResult(BaseModel):
     Результат операции загрузки. Содержит либо информацию о треке, либо ошибку.
     """
     success: bool
-    file_path: Optional[str] = None
+    url: Optional[str] = None
     track_info: Optional["TrackInfo"] = None
     error: Optional[str] = None
 

@@ -330,27 +330,7 @@ class DatabaseService:
             try:
                 async with aiosqlite.connect(self._db_path) as db:
                     # --- Очистка кэша загрузок ---
-                    # 1. Сначала получаем пути к файлам, которые будут удалены
-                    cursor = await db.execute(
-                        "SELECT result_json FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
-                        (self._ttl,),
-                    )
-                    rows_to_delete = await cursor.fetchall()
-                    
-                    deleted_file_count = 0
-                    for row in rows_to_delete:
-                        try:
-                            result_data = json.loads(row[0]) # result_json is the first column
-                            file_path = result_data.get("file_path")
-                            if file_path:
-                                p = Path(file_path)
-                                if p.exists():
-                                    p.unlink()
-                                    deleted_file_count += 1
-                        except (json.JSONDecodeError, KeyError, OSError) as e:
-                            logger.warning(f"Ошибка при удалении кэшированного файла {file_path}: {e}")
-                    
-                    # 2. Затем удаляем записи из базы данных
+                    # В S3-архитектуре локальные файлы не хранятся, поэтому удаляем только записи из БД.
                     cursor_cache = await db.execute(
                         "DELETE FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
                         (self._ttl,),
@@ -364,7 +344,7 @@ class DatabaseService:
                     await db.commit()
                     
                     if cursor_cache.rowcount > 0:
-                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок. Удалено файлов: {deleted_file_count}.")
+                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок.")
                     if cursor_blacklisted.rowcount > 0:
                         logger.info(f"{cursor_blacklisted.rowcount} устаревших записей удалено из черного списка.")
             except Exception as e:

@@ -1,11 +1,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.constants import ChatType
-from config import get_settings
+import logging
 from typing import List, Dict
 from models import VoteCallback, TrackInfo
 
 
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 def get_track_search_keyboard(tracks: List[TrackInfo]) -> InlineKeyboardMarkup:
     """
@@ -49,7 +49,6 @@ def get_dashboard_keyboard(base_url: str, chat_type: str, chat_id: int) -> Inlin
     keyboard = [
         [webapp_btn],
         [
-            InlineKeyboardButton("⏮️", callback_data="noop"), 
             InlineKeyboardButton("⏹️ Стоп", callback_data="stop_radio"),
             InlineKeyboardButton("⏭️ Скип", callback_data="skip_track"),
         ],

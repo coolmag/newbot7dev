@@ -97,6 +97,12 @@ WEBHOOK_URL=https://your-domain.railway.app/telegram
 BASE_URL=https://your-domain.railway.app
 ADMIN_IDS=123456789,987654321
 
+# === S3 OBJECT STORAGE (REQUIRED FOR DEPLOYMENT) ===
+S3_ENDPOINT_URL=https://<your_endpoint_url>
+S3_ACCESS_KEY_ID=<your_access_key>
+S3_SECRET_ACCESS_KEY=<your_secret_key>
+S3_BUCKET_NAME=<your_bucket_name>
+
 # === OPTIONAL ===
 COOKIES_CONTENT=<your_cookies_if_needed>
 ```
@@ -121,8 +127,8 @@ uvicorn main:app --reload --port 8080
 STEP 03 — Cloud Deployment
 ```dockerfile
 # Dockerfile ready for Railway/Render/Fly.io
-# Just connect repo and set env variables
-# System will auto-deploy
+# Just connect repo and set env variables.
+# System will auto-deploy.
 ```
 🎮 // COMMAND INTERFACE
 ```
@@ -144,20 +150,25 @@ cyber-radio-bot/
 │
 ├── main.py              # FastAPI core + bot initialization
 ├── radio.py             # Radio sessions + queue management
-├── youtube.py           # yt-dlp wrapper + smart filtering
+├── youtube.py           # yt-dlp wrapper + S3 upload logic
 ├── handlers.py          # Telegram command processors
 ├── keyboards.py         # Inline keyboard matrices
-├── cache.py             # Audio cache system
+├── database.py          # SQLite for caching track metadata
+├── dependencies.py      # Dependency Injection providers
+├── s3_client.py         # S3 session management
 │
 ├── webapp/              # Frontend terminal
-│   ├── index.html       # Main interface
-│   ├── style.css        # Neon aesthetics
-│   ├── script.js        # Neural visualizer
-│   └── favicon.svg      # System icon
+│   ├── index.html
+│   ├── style.css
+│   └── script.js
+│
+├── tests/               # Automated tests
+│   └── test_smoke.py
 │
 ├── Dockerfile           # Container config
+├── Procfile             # Railway process definition
 ├── requirements.txt     # Python dependencies
-└── .env                 # Environment secrets
+└── .env.example         # Environment secrets template
 ```
 📡 // TECH STACK
 ```
@@ -167,9 +178,10 @@ cyber-radio-bot/
 │  Backend            FastAPI + Uvicorn               │
 │  Bot Framework      python-telegram-bot 21.x        │
 │  Audio Extraction   yt-dlp + FFmpeg                 │
+│  Storage            S3-Compatible Object Storage    │
 │  Frontend           Vanilla JS + Canvas API         │
 │  Deployment         Docker + Railway                │
-│  Database           SQLite (cache layer)            │
+│  Database           SQLite (metadata cache)         │
 └─────────────────────────────────────────────────────┘
 ```
 ⚠️ // SYSTEM REQUIREMENTS

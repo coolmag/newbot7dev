@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 
 import yt_dlp
+import aioboto3
 from config import Settings
 from models import DownloadResult, Source, TrackInfo
-from cache import CacheService
+from database import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,15 @@ class SilentLogger:
 class YouTubeDownloader:
     YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
-    def __init__(self, settings: Settings, cache_service: CacheService):
+    def __init__(
+        self,
+        settings: Settings,
+        db_service: DatabaseService,
+        s3_session: Optional[aioboto3.Session] = None,
+    ):
         self._settings = settings
-        self._cache = cache_service
+        self._db = db_service
+        self._s3_session = s3_session
         # 🆕 Увеличен семафор для предотвращения deadlock
         self.semaphore = asyncio.Semaphore(10)  # Было 3, теперь 10
         # 🆕 Отдельный семафор для поиска (чтобы не блокировать скачивания)
@@ -57,9 +64,10 @@ class YouTubeDownloader:
 
         if mode == "search":
             opts.update({
-                "extract_flat": "in_playlist", 
+                "noplaylist": False, # 🆕 Разрешаем обработку плейлистов
+                "extract_flat": True, # 🆕 Получаем базовую информацию для всего (видео, плейлисты)
                 "skip_download": True,
-                "socket_timeout": 10,  # 🆕 Меньший таймаут для поиска
+                "socket_timeout": 10,
             })
         elif mode == "download":
             opts.update({
@@ -122,11 +130,11 @@ class YouTubeDownloader:
 
                     # Определяем лимиты длительности
                     if search_mode == 'genre':
-                        min_dur = self._settings.PLAY_MIN_GENRE_DURATION_S
-                        max_dur = self._settings.PLAY_MAX_GENRE_DURATION_S
-                    else:
-                        min_dur = self._settings.PLAY_MIN_SONG_DURATION_S
-                        max_dur = self._settings.PLAY_MAX_SONG_DURATION_S
+                        min_dur = self._settings.GENRE_MIN_DURATION_S
+                        max_dur = self._settings.GENRE_MAX_DURATION_S
+                    else: # 'track' or 'artist'
+                        min_dur = self._settings.TRACK_MIN_DURATION_S
+                        max_dur = self._settings.TRACK_MAX_DURATION_S
 
                     if not (min_dur <= duration <= max_dur):
                         return False
@@ -136,7 +144,7 @@ class YouTubeDownloader:
                     
                     # Более строгая фильтрация для артистов
                     if search_mode == 'artist':
-                        BANNED_KEYWORDS.extend(['live', 'cover', 'concert', 'performance'])
+                        BANNED_KEYWORDS.extend(['cover'])
                     
                     if any(keyword in title for keyword in BANNED_KEYWORDS):
                         return False
@@ -150,41 +158,93 @@ class YouTubeDownloader:
                 
                 # 🆕 ОПТИМИЗИРОВАННЫЕ СТРАТЕГИИ ПОИСКА
                 if search_mode == 'genre':
-                    # Для жанров: меньше запросов, больше результатов
-                    logger.info(f"[Search] Жанровый поиск, стратегия: тематические запросы.")
+                    logger.info(f"[Search] Жанровый поиск, стратегия: приоритет плейлистов.")
                     
-                    # 🆕 Только 2 запроса вместо 6!
-                    primary_query = f"{query} mix"
-                    secondary_query = f"{query} playlist"
+                    def process_entries(entries_list: List[Dict[str, Any]]) -> List[TrackInfo]:
+                        processed = []
+                        for e in entries_list:
+                            if filter_entry(e):
+                                # Check for duplicates before adding
+                                if e.get("id") not in {r.identifier for r in final_results}:
+                                    processed.append(TrackInfo.from_yt_info(e))
+                        return processed
+
+                    playlist_opts = opts.copy()
+                    playlist_opts['default_search'] = 'ytsearchplaylist'
+                    playlist_opts['noplaylist'] = False # Explicitly allow playlist processing
+                    playlist_opts['extract_flat'] = True # Get basic info for playlists
                     
-                    for themed_query in [primary_query, secondary_query]:
-                        if len(final_results) >= limit:
-                            break
-                            
-                        search_query = f"ytsearch{limit * 2}:{themed_query}"  # Запрашиваем больше
+                    # 1. Попытка поиска плейлистов
+                    try:
+                        playlist_search_query = f"ytsearchplaylist5:{query} playlist" # Ищем до 5 плейлистов
+                        playlist_info = await self._extract_info(playlist_search_query, playlist_opts)
                         
-                        try:
-                            info = await self._extract_info(search_query, opts)
-                            entries = info.get("entries", []) or []
-                            
-                            processed = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-                            final_results.extend(processed)
-                            
-                            if processed:
-                                logger.info(f"[Search] Найдено {len(processed)} треков с '{themed_query}'")
-                                # No break, continue to gather more tracks from other queries
-                        except Exception as e:
-                            logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
-                            continue
+                        if playlist_info and playlist_info.get('entries'):
+                            logger.info(f"[Search] Найдено {len(playlist_info['entries'])} плейлистов по запросу '{query}'.")
+                            for playlist_entry in playlist_info['entries']:
+                                if len(final_results) >= limit:
+                                    break
+                                if playlist_entry.get('_type') == 'playlist' and playlist_entry.get('url'):
+                                    logger.info(f"[Search] Извлекаю треки из плейлиста: {playlist_entry['title']}")
+                                    try:
+                                        # Извлекаем данные из самого плейлиста, а не через search
+                                        # Для этого нужен ytdl_opts с extract_flat: False для получения entries
+                                        playlist_content_opts = self._get_opts("search").copy()
+                                        playlist_content_opts['extract_flat'] = False # Get full entries for playlist content
+                                        playlist_content_opts['noplaylist'] = False # Ensure it handles it as a playlist URL
+                                        
+                                        content_info = await self._extract_info(playlist_entry['url'], playlist_content_opts)
+                                        
+                                        if content_info and content_info.get('entries'):
+                                            newly_processed = process_entries(content_info['entries'])
+                                            final_results.extend(newly_processed)
+                                            logger.info(f"[Search] Добавлено {len(newly_processed)} треков из плейлиста '{playlist_entry['title']}'.")
+                                    except Exception as e:
+                                        logger.warning(f"[Search] Ошибка при извлечении треков из плейлиста '{playlist_entry['title']}': {e}")
+
+                    except Exception as e:
+                        logger.warning(f"[Search] Ошибка поиска плейлистов для '{query}': {e}")
+
+                    # 2. Fallback: поиск тематических треков, если плейлисты не дали достаточно результатов
+                    if len(final_results) < limit:
+                        logger.info(f"[Search] Недостаточно треков из плейлистов, перехожу к тематическому поиску.")
+                        
+                        queries_to_try = [
+                            query,
+                            f"{query} mix",
+                            f"{query} playlist"
+                        ]
+                        
+                        for themed_query in queries_to_try:
+                            if len(final_results) >= limit:
+                                break
+                                
+                            search_query = f"ytsearch{limit}:{themed_query}"
+                            try:
+                                info = await self._extract_info(search_query, opts) # Use general opts here
+                                entries = info.get("entries", []) or []
+                                
+                                newly_processed = process_entries(entries)
+                                final_results.extend(newly_processed)
+                                
+                                if newly_processed:
+                                    logger.info(f"[Search] Найдено {len(newly_processed)} новых треков с '{themed_query}'")
+
+                            except Exception as e:
+                                logger.warning(f"[Search] Ошибка запроса '{themed_query}': {e}")
+                                continue
                 
                 elif search_mode == 'artist':
-                    # Для артистов: точный поиск официальных треков
+                    # Для артистов: более глубокий поиск для разнообразия
                     logger.info(f"[Search] Поиск по артисту: {query}")
                     
-                    # 🆕 Упрощенная стратегия
-                    for suffix in ["official audio", "topic", ""]:
+                    # 🆕 Расширенные суффиксы для более разнообразных результатов
+                    for suffix in ["official audio", "topic", "", "live", "album", "remix"]:
+                        if len(final_results) >= limit:
+                            break
+
                         themed_query = f"{query} {suffix}".strip()
-                        search_query = f"ytsearch{limit}:{themed_query}"
+                        search_query = f"ytsearch10:{themed_query}" # Ищем по 10 на каждый суффикс
                         
                         try:
                             info = await self._extract_info(search_query, opts)
@@ -192,10 +252,13 @@ class YouTubeDownloader:
                             
                             processed = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
                             
-                            if processed:
-                                final_results.extend(processed)
-                                logger.info(f"[Search] Найдено {len(processed)} треков артиста с '{themed_query}'")
-                                break  # Первый успешный = достаточно
+                            # 🆕 Добавляем только уникальные треки
+                            new_tracks = [p for p in processed if p.identifier not in {r.identifier for r in final_results}]
+                            final_results.extend(new_tracks)
+                            
+                            if new_tracks:
+                                logger.info(f"[Search] Найдено {len(new_tracks)} треков артиста с '{themed_query}'")
+
                         except Exception as e:
                             logger.warning(f"[Search] Ошибка поиска артиста '{themed_query}': {e}")
                             continue
@@ -221,124 +284,92 @@ class YouTubeDownloader:
 
     async def download(self, video_id: str) -> DownloadResult:
         """
-        🆕 УЛУЧШЕННАЯ ЗАГРУЗКА с retry-логикой и graceful degradation
+        Downloads a track, uploads it to S3, and returns a public URL.
+        This version is designed for ephemeral filesystems like Railway.
         """
         async with self.semaphore:
             try:
-                # Проверка кеша
-                cache_key = f"yt:{video_id}"
-                cached = await self._cache.get(cache_key, Source.YOUTUBE)
-                
-                if cached and cached.file_path and Path(cached.file_path).exists():
-                    logger.debug(f"[Download] Использование кеша для {video_id}")
+                # 1. Check cache for a valid S3 URL using video_id as the query
+                cached = await self._db.get(video_id, Source.YOUTUBE)
+                if cached and cached.url:
+                    logger.debug(f"[S3 Download] Using cached URL for {video_id}: {cached.url}")
                     return cached
-                elif cached:
-                    # Запись в кеше есть, но файл отсутствует
-                    logger.warning(f"[Download] Файл из кеша отсутствует для {video_id}, удаляем запись")
-                    # Не используем await для delete - это не критично
-                    try:
-                        asyncio.create_task(self._cache.blacklist_track_id(video_id))
-                    except:
-                        pass
 
+                # 2. Check if S3 is configured before proceeding
+                if not self._s3_session:
+                    logger.error("[S3 Download] S3 is not configured. Cannot download track.")
+                    return DownloadResult(success=False, error="S3 storage is not configured.")
+
+                # 3. Perform local download using yt-dlp
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
-                
-                # 🆕 Быстрая проверка длительности БЕЗ полной загрузки
+                track_info_from_download = None
                 try:
                     info_for_check = await asyncio.wait_for(
                         self._extract_info(video_url, self._get_opts("search")),
-                        timeout=15.0  # 🆕 Строгий таймаут
+                        timeout=15.0
                     )
                     track_info_from_download = TrackInfo.from_yt_info(info_for_check)
-                    
-                    # Проверка длительности
-                    if track_info_from_download.duration and track_info_from_download.duration > self._settings.PLAY_MAX_GENRE_DURATION_S:
-                        return DownloadResult(
-                            success=False, 
-                            error=f"Видео слишком длинное ({track_info_from_download.duration / 60:.1f} мин.)"
-                        )
-                except asyncio.TimeoutError:
-                    logger.warning(f"[Download] Таймаут проверки длительности для {video_id}")
-                    # Продолжаем загрузку, но с риском
+                    if track_info_from_download.duration and track_info_from_download.duration > self._settings.GENRE_MAX_DURATION_S:
+                        return DownloadResult(success=False, error=f"Video is too long ({track_info_from_download.duration / 60:.1f} min.)")
                 except Exception as e:
-                    logger.warning(f"[Download] Не удалось проверить длительность {video_id}: {e}")
-                    # Продолжаем
+                    logger.warning(f"[S3 Download] Pre-check failed for {video_id}: {e}")
+                
+                local_path_str = None
+                try:
+                    loop = asyncio.get_running_loop()
+                    download_opts = self._get_opts("download")
+                    await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(download_opts).download([video_url])),
+                        timeout=45.0
+                    )
+                    local_path_str = self._find_downloaded_file(video_id)
+                    if not local_path_str:
+                        raise FileNotFoundError("File not found after yt-dlp download.")
+                except Exception as e:
+                    logger.error(f"[S3 Download] Local download failed for {video_id}: {e}")
+                    self._cleanup_partial_files(video_id)
+                    return DownloadResult(success=False, error=f"Local download failed: {e}")
 
-                # 🆕 RETRY-ЛОГИКА для загрузки
-                max_retries = 2
-                for attempt in range(max_retries + 1):
-                    try:
-                        loop = asyncio.get_running_loop()
-                        download_opts = self._get_opts("download")
-                        
-                        # 🆕 Уменьшен таймаут: 60 секунд вместо 120
-                        download_task = loop.run_in_executor(
-                            None, 
-                            lambda: yt_dlp.YoutubeDL(download_opts).download([video_url])
+                # 4. Upload the local file to S3
+                local_path = Path(local_path_str)
+                s3_object_key = f"tracks/{local_path.name}"
+                public_url = ""
+                
+                try:
+                    async with self._s3_session.client("s3", endpoint_url=self._settings.S3_ENDPOINT_URL) as s3:
+                        logger.info(f"[S3] Uploading {local_path} to {self._settings.S3_BUCKET_NAME}/{s3_object_key}")
+                        await s3.upload_file(
+                            Filename=str(local_path),
+                            Bucket=self._settings.S3_BUCKET_NAME,
+                            Key=s3_object_key,
+                            ExtraArgs={'ACL': 'public-read', 'ContentType': 'audio/m4a'}
                         )
-                        
-                        await asyncio.wait_for(download_task, timeout=60.0)
-                        
-                        # Поиск файла
-                        final_path = self._find_downloaded_file(video_id)
-                        if not final_path:
-                            raise FileNotFoundError("Файл не был создан после скачивания")
-                        
-                        # Проверка размера
-                        file_size = Path(final_path).stat().st_size
-                        max_size = self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024
-                        
-                        if file_size > max_size:
-                            Path(final_path).unlink(missing_ok=True)
-                            return DownloadResult(
-                                success=False, 
-                                error=f"Финальный файл превысил лимит размера ({file_size / 1024 / 1024:.1f}MB)"
-                            )
+                    public_url = f"{self._settings.S3_ENDPOINT_URL}/{self._settings.S3_BUCKET_NAME}/{s3_object_key}"
+                    logger.info(f"[S3] Upload successful. URL: {public_url}")
+                except Exception as e:
+                    logger.error(f"[S3] Upload failed for {video_id}: {e}", exc_info=True)
+                    return DownloadResult(success=False, error=f"S3 upload failed: {e}")
+                finally:
+                    # 5. Clean up the local file
+                    local_path.unlink(missing_ok=True)
+                    self._cleanup_partial_files(video_id)
 
-                        # Успех!
-                        result = DownloadResult(
-                            success=True, 
-                            file_path=str(final_path), 
-                            track_info=track_info_from_download if 'track_info_from_download' in locals() else TrackInfo(
-                                title="Unknown",
-                                artist="Unknown",
-                                duration=0,
-                                source=Source.YOUTUBE.value,
-                                identifier=video_id
-                            )
-                        )
-                        
-                        # Сохраняем в кеш
-                        await self._cache.set(cache_key, Source.YOUTUBE, result)
-                        logger.info(f"[Download] Успешно скачан {video_id} (попытка {attempt + 1})")
-                        return result
-                        
-                    except asyncio.TimeoutError:
-                        logger.warning(f"[Download] Таймаут загрузки {video_id} (попытка {attempt + 1}/{max_retries + 1})")
-                        # Очистка partial files
-                        self._cleanup_partial_files(video_id)
-                        
-                        if attempt < max_retries:
-                            await asyncio.sleep(2)  # 🆕 Небольшая задержка перед retry
-                            continue
-                        else:
-                            return DownloadResult(
-                                success=False, 
-                                error="Превышен таймаут скачивания после нескольких попыток"
-                            )
-                    
-                    except Exception as e:
-                        logger.error(f"[Download] Ошибка загрузки {video_id} (попытка {attempt + 1}): {e}")
-                        self._cleanup_partial_files(video_id)
-                        
-                        if attempt < max_retries:
-                            await asyncio.sleep(2)
-                            continue
-                        else:
-                            return DownloadResult(success=False, error=str(e))
+                # 6. Create and cache the successful result
+                if not track_info_from_download:
+                     track_info_from_download = TrackInfo(title="Unknown", artist="Unknown", duration=0, source=Source.YOUTUBE.value, identifier=video_id)
+
+                result = DownloadResult(
+                    success=True,
+                    url=public_url,
+                    track_info=track_info_from_download
+                )
+                # Use video_id as the query for caching
+                await self._db.set(video_id, Source.YOUTUBE, result)
+                
+                return result
 
             except Exception as e:
-                logger.error(f"[Download] Критическая ошибка для {video_id}: {e}", exc_info=True)
+                logger.error(f"[S3 Download] Critical error for {video_id}: {e}", exc_info=True)
                 return DownloadResult(success=False, error=str(e))
 
     def _cleanup_partial_files(self, video_id: str):

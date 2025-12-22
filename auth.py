@@ -3,12 +3,14 @@ import hmac
 from typing import Optional, Dict, Any
 from urllib.parse import unquote
 
-from fastapi import HTTPException, status, Header
+from fastapi import HTTPException, status, Header, Depends
 from pydantic import BaseModel, Field
 
-from config import get_settings
+# Local imports
+from config import Settings
+from dependencies import get_settings_dep
 
-settings = get_settings()
+# settings = get_settings() # 💥 УДАЛЕНО: Это вызывало ошибку при импорте во время тестов
 
 class WebAppUser(BaseModel):
     id: int
@@ -78,7 +80,10 @@ def validate_init_data(init_data: str, bot_token: str) -> InitData:
             detail=f"Error during initData validation: {e}"
         )
 
-async def get_validated_user(authorization: str = Header(None)) -> WebAppUser:
+async def get_validated_user(
+    authorization: str = Header(None),
+    settings: Settings = Depends(get_settings_dep)
+) -> WebAppUser:
     """
     A FastAPI dependency that validates the initData from the Authorization header.
     
