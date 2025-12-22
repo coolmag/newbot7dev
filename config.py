@@ -33,6 +33,3 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY_ID: str | None = None
     S3_SECRET_ACCESS_KEY: str | None = None
     S3_BUCKET_NAME: str | None = None
-
-    # --- Path Definitions ---
-    BASE_DIR: Path = Path(__file__).resolve().parent
