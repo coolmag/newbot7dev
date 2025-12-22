@@ -418,7 +418,7 @@ async def get_audio(
             raise HTTPException(status_code=400, detail="Invalid track ID format")
         
         # Attempt to get the cached result from the database
-        cached_result = await db_service.get(f"yt:{track_id}", Source.YOUTUBE)
+        cached_result = await db_service.get(track_id, Source.YOUTUBE)
         
         # If we have a cached result with a URL, redirect to it
         if cached_result and cached_result.url:
