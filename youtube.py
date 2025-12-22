@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Literal
 import yt_dlp
 import aioboto3
 from config import Settings
-from models import DownloadResult, Source, TrackInfo
+from models import StreamInfoResult, Source, TrackInfo
 from database import DatabaseService
 
 logger = logging.getLogger(__name__)
