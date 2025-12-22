@@ -9,13 +9,17 @@ class Source(str, Enum):
     YOUTUBE_MUSIC = "YouTube Music"
     INTERNET_ARCHIVE = "Internet Archive"
 
-class DownloadResult(BaseModel):
+class StreamInfo(BaseModel):
+    """Содержит прямую ссылку на аудиопоток и метаданные трека."""
+    stream_url: str
+    track_info: "TrackInfo"
+
+class StreamInfoResult(BaseModel):
     """
-    Результат операции загрузки. Содержит либо информацию о треке, либо ошибку.
+    Результат операции по получению информации о потоке.
     """
     success: bool
-    url: Optional[str] = None
-    track_info: Optional["TrackInfo"] = None
+    stream_info: Optional[StreamInfo] = None
     error: Optional[str] = None
 
 class TrackInfo(BaseModel): # Changed from @dataclass(frozen=True)

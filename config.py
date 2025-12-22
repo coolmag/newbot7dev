@@ -38,12 +38,6 @@ class Settings(BaseSettings):
     GENRE_MAX_DURATION_S: int = 18000 # 5 hours
     PLAY_MAX_FILE_SIZE_MB: int = 50
 
-    # --- Cloud Settings (for S3) ---
-    S3_ENDPOINT_URL: str | None = None
-    S3_ACCESS_KEY_ID: str | None = None
-    S3_SECRET_ACCESS_KEY: str | None = None
-    S3_BUCKET_NAME: str | None = None
-
     @field_validator("ADMIN_ID_LIST", mode="before")
     @classmethod
     def _assemble_admin_ids(cls, v, info) -> List[int]:

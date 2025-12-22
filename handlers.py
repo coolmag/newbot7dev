@@ -23,7 +23,7 @@ from config import Settings
 from keyboards import get_track_search_keyboard, get_genre_voting_keyboard
 from youtube import YouTubeDownloader, SearchMode # Import SearchMode
 from radio_voting import GenreVotingService
-from models import TrackInfo
+from models import TrackInfo, StreamInfoResult, StreamInfo
 
 logger = logging.getLogger("handlers")
 
@@ -223,108 +223,30 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
 
         if data.startswith("track_choice:"):
             track_id = data.removeprefix("track_choice:")
-            await query.edit_message_text(f"⏳ Загружаю выбранный трек...", reply_markup=None)
-            
-            result = await downloader.download(track_id)
-            if result.success and result.url:
-                try:
-                    await context.bot.send_audio(
-                        chat_id=chat_id,
-                        audio=result.url,
-                        title=result.track_info.title,
-                        performer=result.track_info.artist,
-                        duration=result.track_info.duration,
-                        caption=f"Трек загружен по вашему запросу."
-                    )
-                    await query.message.delete()
-                except Exception as e:
-                    logger.error(f"Ошибка при отправке аудио по URL: {e}", exc_info=True)
-                    await query.edit_message_text("❌ Ошибка при отправке файла.")
-            else:
-                await query.edit_message_text(f"❌ Не удалось скачать: {result.error or 'Неизвестная ошибка'}")
-            return
-            
-        if data == "cancel_search":
-            await query.edit_message_text("Поиск отменен.", reply_markup=None)
-            return
+            # We need to get the track metadata to show the user, so we search for it first.
+            # This is slightly inefficient but necessary for good UX.
+            tracks = await downloader.search(track_id, search_mode='track', limit=1)
+            if not tracks:
+                await query.edit_message_text("❌ Не удалось найти информацию о треке.")
+                return
 
-        if data == "show_main_genres":
+            track_info = tracks[0]
+            await query.edit_message_text(f"⏳ Отправляю трек: {track_info.display_name}", reply_markup=None)
+            
+            # The URL points to our own app's streaming endpoint
+            proxy_stream_url = f"{settings.BASE_URL}/stream/{track_id}"
+            
             try:
-                # First, try to edit. If it's a text message, this is fast.
-                await query.edit_message_text(
-                    "💿 *Каталог жанров:*",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=_generate_main_genres_keyboard(settings)
+                await context.bot.send_audio(
+                    chat_id=chat_id,
+                    audio=proxy_stream_url,
+                    title=track_info.title,
+                    performer=track_info.artist,
+                    duration=track_info.duration,
+                    caption=f"Трек загружен по вашему запросу."
                 )
-            except BadRequest as e:
-                # If it fails because it's a media message, delete and send new.
-                if "There is no text in the message to edit" in str(e):
-                    await query.message.delete()
-                    await query.message.chat.send_message(
-                        "💿 *Каталог жанров:*",
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=_generate_main_genres_keyboard(settings)
-                    )
-                else:
-                    # Re-raise other bad requests
-                    raise e
-            return
-
-        elif data.startswith("genre_main:"):
-            main_genre_key = data.removeprefix("genre_main:")
-            main_genre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("name", "Жанр")
-            keyboard = _generate_subgenres_keyboard(settings, main_genre_key)
-            if keyboard: await query.edit_message_text(f"🎶 *{main_genre_name}:*", parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
-        elif data.startswith("genre_sub:"):
-            _, main_genre_key, subgenre_key = data.split(":")
-            subgenre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("subgenres", {}).get(subgenre_key, {}).get("name", "Unknown")
-            search_query = _get_style_search_query(settings, main_genre_key, subgenre_key)
-            # Explicitly set search_mode to 'genre'
-            await radio.start(chat_id, search_query, chat_type, search_mode='genre', message_id=query.message.message_id, display_name=subgenre_name)
-        elif data.startswith("vote_genre:"):
-            genre_key = data.removeprefix("vote_genre:")
-            user_id = query.from_user.id
-            if await voting_service.register_vote(chat_id, genre_key, user_id):
-                await query.answer("✅ Ваш голос принят!")
-            else:
-                await query.answer("⛔ Голосование уже завершено.", show_alert=True)
-        
-        elif data == "show_vote":
-            current_voting_session = voting_service.get_session(chat_id)
-            if current_voting_session and current_voting_session.is_vote_in_progress:
-                try:
-                    await query.message.reply_text(
-                        "📢 **Идет голосование за жанр!**",
-                        reply_markup=get_genre_voting_keyboard(current_voting_session.current_vote_genres, current_voting_session.votes),
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                except BadRequest: pass
-            else:
-                await query.answer("⛔ В данный момент голосование неактивно.", show_alert=True)
-
-        elif data == "stop_radio": await radio.stop(chat_id)
-        elif data == "skip_track": await radio.skip(chat_id)
-        
-        elif data == "cancel_menu":
-            try:
                 await query.message.delete()
-            except BadRequest:
-                # If deletion fails, edit to a closed state as a fallback
-                try:
-                    await query.edit_message_text("Меню закрыто.", reply_markup=None)
-                except BadRequest: # If that also fails, just ignore.
-                    pass
+            except Exception as e:
+                logger.error(f"Ошибка при отправке аудио по URL: {e}", exc_info=True)
+                await context.bot.send_message(chat_id, "❌ Ошибка при отправке файла.")
             return
-            
-        elif data == "noop": pass
-
-    # --- Register Handlers (No changes needed) ---
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("menu", start_cmd))
-    app.add_handler(CommandHandler("play", play_cmd))
-    app.add_handler(CommandHandler("artist", artist_cmd))
-    app.add_handler(CommandHandler("vote", vote_cmd))
-    app.add_handler(CommandHandler("radio", radio_cmd))
-    app.add_handler(CommandHandler("stop", stop_cmd))
-    app.add_handler(CommandHandler("skip", skip_cmd))
-    app.add_handler(CallbackQueryHandler(button_callback))

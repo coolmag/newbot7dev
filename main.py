@@ -39,56 +39,7 @@ logger = logging.getLogger(__name__)
 # 🆕 Инициализация HealthMonitor
 health_monitor = HealthMonitor()
 
-def audio_mime_for(path: Path) -> str:
-    """Guess the MIME type for a given audio file path."""
-    ext = path.suffix.lower()
-    if ext == ".mp3": return "audio/mpeg"
-    if ext in (".m4a", ".mp4"): return "audio/mp4"
-    if ext in (".webm", ".opus", ".ogg"): return "audio/webm"
-    mime, _ = mimetypes.guess_type(str(path))
-    return mime or "application/octet-stream"
-
-
-async def download_playlist_in_background(
-    downloader: YouTubeDownloader, 
-    tracks: list[TrackInfo]
-):
-    """
-    🆕 УЛУЧШЕННАЯ фоновая загрузка с контролем конкурентности
-    """
-    logger.info(f"[Background] Начало фоновой загрузки {len(tracks)} треков.")
-    
-    # 🆕 Ограничиваем количество одновременных загрузок
-    semaphore = asyncio.Semaphore(3)  # Максимум 3 параллельно
-    
-    async def download_with_limit(track: TrackInfo):
-        async with semaphore:
-            try:
-                result = await asyncio.wait_for(
-                    downloader.download(track.identifier),
-                    timeout=60.0
-                )
-                if result.success:
-                    logger.debug(f"[Background] Загружен: {track.title}")
-                    health_monitor.record_download(True) # 🆕 Запись успешной загрузки
-                else:
-                    logger.warning(f"[Background] Ошибка загрузки {track.title}: {result.error}")
-                    health_monitor.record_download(False) # 🆕 Запись неуспешной загрузки
-            except asyncio.TimeoutError:
-                logger.warning(f"[Background] Таймаут для {track.title}")
-                health_monitor.record_download(False) # 🆕 Запись неуспешной загрузки
-            except Exception as e:
-                logger.error(f"[Background] Ошибка для {track.title}: {e}")
-                health_monitor.record_download(False) # 🆕 Запись неуспешной загрузки
-    
-    # Запускаем все задачи параллельно (но с ограничением через semaphore)
-    await asyncio.gather(
-        *[download_with_limit(track) for track in tracks],
-        return_exceptions=True  # 🆕 Не останавливаемся на ошибках
-    )
-    
-    logger.info(f"[Background] Фоновая загрузка завершена.")
-
+# Obsolete functions from file-based architecture are removed.
 
 async def keep_alive_task_func():
     """A task to ping the health check endpoint to keep the service alive on some platforms."""
@@ -130,7 +81,7 @@ async def keep_alive_task_func():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    🆕 Улучшенный lifespan с graceful shutdown
+    Улучшенный lifespan с graceful shutdown
     """
     # --- Startup ---
     setup_logging()
@@ -146,7 +97,7 @@ async def lifespan(app: FastAPI):
     # Create the keep-alive task without passing the base_url
     keep_alive_task = asyncio.create_task(keep_alive_task_func())
 
-    # Создаем директории
+    # Создаем директории (оставляем на случай, если yt-dlp что-то временно кэширует)
     settings.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     if settings.COOKIES_CONTENT:
         settings.COOKIES_FILE.write_text(settings.COOKIES_CONTENT, encoding="utf-8")
@@ -183,7 +134,6 @@ async def lifespan(app: FastAPI):
     # --- Shutdown ---
     logger.info("🛑 Application shutting down...")
     
-    # 🆕 Graceful остановка keep-alive
     if not keep_alive_task.done():
         keep_alive_task.cancel()
         try:
@@ -192,7 +142,6 @@ async def lifespan(app: FastAPI):
             pass
         logger.info("✅ Keep-alive task stopped")
 
-    # Остановка радио
     try: 
         await asyncio.wait_for(radio.stop_all(), timeout=10.0)
         logger.info("✅ All radio sessions stopped")
@@ -201,11 +150,8 @@ async def lifespan(app: FastAPI):
     except Exception as e: 
         logger.warning(f"Error during radio stop: {e}")
     
-    # Остановка бота
     await tg_app.stop()
     await tg_app.shutdown()
-    
-    # Закрытие кеша
     await db_service.close()
     
     logger.info("✅ Application shutdown complete.")
@@ -213,10 +159,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# 🆕 Добавление CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Для продакшена лучше указать конкретные домены
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -235,9 +180,8 @@ app.mount("/webapp", StaticFiles(directory="webapp", html=True), name="webapp")
 async def favicon():
     return FileResponse("webapp/favicon.svg", media_type="image/svg+xml")
 
-# --- API Routes for Web Player ---
+# --- API Routes ---
 
-# 🆕 Moved health checks under /api
 @app.get("/api/health")
 async def health():
     return {"ok": True}
@@ -288,162 +232,73 @@ async def start_radio_from_webapp(
     user: WebAppUser = Depends(get_validated_user),
     radio: RadioManager = Depends(get_radio_manager_dep)
 ):
-    # 🆕 Для запуска из WebApp используем режим 'genre' по умолчанию
     await radio.start(chat_id=req.chat_id, query=req.query, chat_type="WebApp", search_mode="genre")
     return {"ok": True}
 
 
 @app.get("/api/player/playlist")
 async def get_player_playlist(
-    query: str, 
-    background_tasks: BackgroundTasks,
+    query: str,
     downloader: YouTubeDownloader = Depends(get_downloader_dep)
 ):
     """
-    🆕 УЛУЧШЕННАЯ генерация плейлиста с прогрессивной загрузкой
+    Searches for tracks and returns metadata for the web player.
+    Does not download or cache anything.
     """
     if not query or len(query.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Query parameter is required and cannot be empty.")
+        raise HTTPException(status_code=400, detail="Query parameter is required.")
 
     try:
-        # 💡 Use 'genre' mode for broad web app queries to find mixes and compilations
-        tracks = await asyncio.wait_for(
-            downloader.search(query, search_mode='genre', limit=15),
-            timeout=20.0
-        )
+        tracks = await downloader.search(query, search_mode='genre', limit=20)
         
         if not tracks:
-            logger.warning(f"[Playlist] Не найдено треков для '{query}'")
-            return {"playlist": [], "message": "No tracks found for this query"}
+            return {"playlist": []}
 
-        # Блокирующая загрузка ПЕРВОГО трека
-        first_track = tracks[0]
-        try:
-            logger.info(f"[Playlist] Блокирующая загрузка первого трека: {first_track.identifier}")
-            
-            result = await asyncio.wait_for(
-                downloader.download(first_track.identifier),
-                timeout=45.0
-            )
-            
-            if not result.success:
-                logger.error(f"[Playlist] Не удалось загрузить первый трек: {result.error}")
-                # 🆕 Пробуем второй трек, если первый провалился
-                if len(tracks) > 1:
-                    logger.info(f"[Playlist] Пробуем второй трек как первый...")
-                    second_track = tracks[1]
-                    result = await asyncio.wait_for(
-                        downloader.download(second_track.identifier),
-                        timeout=45.0
-                    )
-                    if result.success:
-                        # Меняем местами треки
-                        tracks[0], tracks[1] = tracks[1], tracks[0]
-                    else:
-                        raise HTTPException(
-                            status_code=500, 
-                            detail="Failed to download any tracks for playback"
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Failed to process first track: {result.error}"
-                    )
-            
-            logger.info(f"[Playlist] Первый трек загружен успешно: {first_track.identifier}")
-            
-        except asyncio.TimeoutError:
-            logger.error(f"[Playlist] Таймаут загрузки первого трека {first_track.identifier}")
-            raise HTTPException(
-                status_code=504,
-                detail="Timeout while downloading first track. Please try again."
-            )
-
-        # Фоновая загрузка остальных треков
-        remaining_tracks = tracks[1:]
-        if remaining_tracks:
-            logger.info(f"[Playlist] Запуск фоновой загрузки {len(remaining_tracks)} треков")
-            background_tasks.add_task(
-                download_playlist_in_background, 
-                downloader, 
-                remaining_tracks
-            )
-
-        # Формирование ответа
         playlist = [
             {
                 "title": track.title, 
                 "artist": track.artist, 
                 "duration": track.duration,
                 "identifier": track.identifier, 
-                "url": f"/audio/{track.identifier}",
-                "view_count": track.view_count, 
-                "like_count": track.like_count,
+                "url": f"/stream/{track.identifier}", # URL points to our own stream endpoint
             } for track in tracks
         ]
+        return {"playlist": playlist}
         
-        return {
-            "playlist": playlist,
-            "total": len(playlist),
-            "first_ready": True
-        }
-        
-    except asyncio.TimeoutError:
-        logger.error(f"[Playlist] Общий таймаут для запроса '{query}'")
-        raise HTTPException(
-            status_code=504,
-            detail="Search timeout. Please try a more specific query."
-        )
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"[Playlist] Критическая ошибка: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal error while generating playlist: {str(e)}"
-        )
+        logger.error(f"[Playlist] Critical error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal error: {e}")
 
 
-@app.get("/audio/{track_id}")
-async def get_audio(
-    track_id: str,
-    db_service: DatabaseService = Depends(get_database_service_dep)
+@app.get("/stream/{video_id}")
+async def stream_audio(
+    video_id: str,
+    downloader: YouTubeDownloader = Depends(get_downloader_dep)
 ):
     """
-    Redirects to the S3 URL for a given track_id if it's cached.
-    This is used by the web player.
+    Gets a direct stream URL from yt-dlp and proxies the audio stream.
+    This avoids storing any files on disk.
     """
-    try:
-        if not track_id or len(track_id) != 11:
-            raise HTTPException(status_code=400, detail="Invalid track ID format")
-        
-        # Attempt to get the cached result from the database
-        cached_result = await db_service.get(track_id, Source.YOUTUBE)
-        
-        # If we have a cached result with a URL, redirect to it
-        if cached_result and cached_result.url:
-            logger.info(f"[Audio] Redirecting to S3 URL for track {track_id}")
-            return RedirectResponse(url=cached_result.url, status_code=307)
-        
-        # If the track is not cached yet, inform the client
-        logger.info(f"[Audio] Track {track_id} not found in cache for streaming.")
-        raise HTTPException(
-            status_code=404, 
-            detail={
-                "error": "track_not_ready",
-                "message": "Track is not cached yet or is still being processed.",
-                "track_id": track_id
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[Audio] Unexpected error for {track_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while fetching audio"
-        )
+    stream_result = await downloader.get_stream_info(video_id)
+    if not stream_result.success:
+        raise HTTPException(status_code=404, detail=stream_result.error)
+
+    stream_url = stream_result.stream_info.stream_url
+
+    async def stream_generator():
+        """Yields chunks of the audio stream."""
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", stream_url) as response:
+                if response.status_code != 200:
+                    logger.error(f"Upstream audio source returned status {response.status_code}")
+                    raise HTTPException(status_code=502, detail="Upstream audio source failed.")
+                
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+    # yt-dlp usually provides 'audio/mp4' for bestaudio
+    return StreamingResponse(stream_generator(), media_type="audio/mp4")
+
 
 # --- Telegram Webhook ---
 
@@ -452,7 +307,7 @@ async def webhook(
     req: Request,
     tg_app: Application = Depends(get_telegram_app_dep)
 ):
-    """Single entry point for Telegram updates."""
+    # ... (rest of the file is the same)
     try:
         data = await req.json()
         update = Update.de_json(data, tg_app.bot)
@@ -468,5 +323,5 @@ async def webhook(
             e,
             exc_info=True,
         )
-        health_monitor.record_error() # 🆕 Запись ошибки
+        health_monitor.record_error()
     return {"ok": True}
