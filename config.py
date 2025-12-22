@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     # --- App Logic Settings ---
     LOG_LEVEL: str = "INFO"
+    CACHE_TTL_DAYS: int = 7
 
     # --- Cloud Settings (for S3) ---
     S3_ENDPOINT_URL: str | None = None
