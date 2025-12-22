@@ -1,0 +1,176 @@
+{
+    "pop_rock": {
+        "name": "Поп и Рок",
+        "icon": "🎸",
+        "color": "#E74C3C",
+        "subgenres": {
+            "pop": { "name": "Поп", "search": "pop hits", "styles": "Pop, Top 40" },
+            "rock": { "name": "Рок", "search": "rock music", "styles": "Classic Rock, Hard Rock" },
+            "rock_n_roll": { "name": "Рок-н-ролл", "search": "rock and roll", "styles": "50s, 60s" },
+            "alt_rock": { "name": "Альтернативный рок", "search": "alternative rock", "styles": "90s Alternative, Modern Rock" },
+            "indie_rock": { "name": "Инди-рок", "search": "indie rock playlist", "styles": "Indie, Bedroom Pop" },
+            "punk_rock": { "name": "Панк-рок", "search": "punk rock classics", "styles": "Punk, Pop-Punk" },
+            "pop_rock": { "name": "Поп-рок", "search": "pop rock hits", "styles": "Soft Rock, Power Pop" },
+            "psychedelic_rock": { "name": "Психоделический рок", "search": "psychedelic rock", "styles": "60s, Acid Rock" },
+            "prog_rock": { "name": "Прогрессивный рок", "search": "progressive rock", "styles": "Prog Rock, Art Rock" },
+            "glam_rock": { "name": "Глэм-рок", "search": "glam rock", "styles": "70s, T-Rex, David Bowie" },
+            "soft_rock": { "name": "Софт-рок", "search": "soft rock hits", "styles": "Yacht Rock, Mellow Gold" },
+            "surf_rock": { "name": "Серф-рок", "search": "surf rock", "styles": "The Beach Boys, Dick Dale" },
+            "grunge": { "name": "Гранж", "search": "grunge hits", "styles": "Nirvana, Pearl Jam, Soundgarden" },
+            "britpop": { "name": "Брит-поп", "search": "britpop hits", "styles": "Oasis, Blur, Pulp" },
+            "post_punk": { "name": "Пост-панк", "search": "post-punk playlist", "styles": "The Cure, Joy Division" },
+            "new_wave": { "name": "Нью-вейв", "search": "new wave 80s", "styles": "80s, Synth" },
+            "rockabilly": { "name": "Рокабилли", "search": "rockabilly music", "styles": "Elvis Presley, Johnny Cash" }
+        }
+    },
+    "hip_hop_rnb": {
+        "name": "Хип-хоп и R&B",
+        "icon": "🎤",
+        "color": "#FFD93D",
+        "subgenres": {
+            "hip_hop": { "name": "Хип-хоп", "search": "hip hop music", "styles": "Rap, Urban" },
+            "rap": { "name": "Рэп", "search": "rap playlist", "styles": "Lyrical, Conscious" },
+            "trap": { "name": "Трэп", "search": "trap music hits", "styles": "Modern Trap, Drill, Rage" },
+            "rnb": { "name": "R&B", "search": "r&b hits 2024", "styles": "Contemporary R&B, Slow Jams" },
+            "soul": { "name": "Соул", "search": "soul music songs", "styles": "Motown, Stax" },
+            "neo_soul": { "name": "Нео-соул", "search": "neo soul playlist", "styles": "Erykah Badu, D'Angelo" },
+            "funk": { "name": "Фанк", "search": "funk music hits", "styles": "James Brown, Parliament" },
+            "disco": { "name": "Диско", "search": "70s songs", "styles": "70s, Dance" },
+            "gangsta_rap": { "name": "Гангста-рэп", "search": "gangsta rap classics", "styles": "G-Funk, West Coast" },
+            "lofi_hip_hop": { "name": "Лоу-фай хип-хоп", "search": "lofi hip hop beats to study", "styles": "Chillhop, Study Beats" },
+            "drill": { "name": "Дрилл", "search": "drill music", "styles": "UK Drill, NY Drill" },
+            "old_school_hip_hop": { "name": "Олдскул хип-хоп", "search": "old school hip hop 90s", "styles": "Boom Bap, Golden Age" }
+        }
+    },
+    "electronic": {
+        "name": "Электроника",
+        "icon": "🎧",
+        "color": "#9B59B6",
+        "subgenres": {
+            "house": { "name": "Хаус", "search": "house music", "styles": "Deep House, Tech House" },
+            "techno": { "name": "Техно", "search": "techno playlist", "styles": "Minimal, Industrial, Detroit" },
+            "trance": { "name": "Транс", "search": "trance music", "styles": "Uplifting, Progressive" },
+            "dubstep": { "name": "Дабстеп", "search": "dubstep classics", "styles": "Brostep, Riddim" },
+            "dnb": { "name": "Драм-н-бэйс", "search": "drum and bass", "styles": "Liquid, Jump Up, Neurofunk" },
+            "electro": { "name": "Электро", "search": "electro music", "styles": "Electro-Funk, Breaks" },
+            "ambient": { "name": "Эмбиент", "search": "ambient music for relaxation", "styles": "Chillout, Atmospheric" },
+            "synth_pop": { "name": "Синти-поп", "search": "synth pop 80s", "styles": "Synthwave, Electropop" },
+            "edm": { "name": "EDM", "search": "edm bangers", "styles": "Big Room, Future Bass" },
+            "idm": { "name": "IDM", "search": "idm intelligent dance music", "styles": "Aphex Twin, Boards of Canada" },
+            "deep_house": { "name": "Дип-хаус", "search": "deep house mix", "styles": "Soulful, Jazzy" },
+            "tropical_house": { "name": "Тропикал-хаус", "search": "tropical house", "styles": "Kygo, Thomas Jack" },
+            "euro_disco": { "name": "Евродиско", "search": "euro disco 80s", "styles": "Italo Disco, Modern Talking" },
+            "hardstyle": { "name": "Хардстайл", "search": "hardstyle music", "styles": "Rawstyle, Euphoric" },
+            "gabber": { "name": "Габбер", "search": "gabber hardcore", "styles": "Hardcore, Thunderdome" },
+            "trip_hop": { "name": "Трип-хоп", "search": "trip hop playlist", "styles": "Massive Attack, Portishead" },
+            "glitch": { "name": "Глитч", "search": "glitch music", "styles": "Experimental, IDM" },
+            "vaporwave": { "name": "Вэйпорвейв", "search": "vaporwave playlist", "styles": "Aesthetic, Chillwave" }
+        }
+    },
+    "metal": {
+        "name": "Метал",
+        "icon": "🤘",
+        "color": "#34495E",
+        "subgenres": {
+            "heavy_metal": { "name": "Хэви-метал", "search": "heavy metal classics", "styles": "Iron Maiden, Judas Priest" },
+            "thrash_metal": { "name": "Трэш-метал", "search": "thrash metal", "styles": "Metallica, Slayer" },
+            "death_metal": { "name": "Дэт-метал", "search": "death metal", "styles": "Death, Morbid Angel" },
+            "black_metal": { "name": "Блэк-метал", "search": "black metal", "styles": "Mayhem, Burzum" },
+            "nu_metal": { "name": "Ню-метал", "search": "nu metal hits", "styles": "Korn, Limp Bizkit" },
+            "symphonic_metal": { "name": "Симфо-метал", "search": "symphonic metal", "styles": "Nightwish, Epica" },
+            "power_metal": { "name": "Пауэр-метал", "search": "power metal", "styles": "Helloween, DragonForce" },
+            "doom_metal": { "name": "Дум-метал", "search": "doom metal", "styles": "Candlemass, Electric Wizard" },
+            "metalcore": { "name": "Металкор", "search": "metalcore playlist", "styles": "Killswitch Engage, As I Lay Dying" },
+            "grindcore": { "name": "Грайндкор", "search": "grindcore", "styles": "Napalm Death, Carcass" }
+        }
+    },
+    "jazz_blues": {
+        "name": "Джаз и Блюз",
+        "icon": "🎷",
+        "color": "#3498DB",
+        "subgenres": {
+            "blues": { "name": "Блюз", "search": "blues music", "styles": "Chicago Blues, Acoustic Blues" },
+            "delta_blues": { "name": "Дельта-блюз", "search": "delta blues", "styles": "Robert Johnson, Son House" },
+            "rnb_classic": { "name": "Ритм-н-блюз (классика)", "search": "classic rhythm and blues", "styles": "50s, 60s" },
+            "jazz": { "name": "Джаз", "search": "jazz classics", "styles": "Bebop, Swing, Cool Jazz" },
+            "swing": { "name": "Свинг", "search": "swing music", "styles": "Big Band, Benny Goodman" },
+            "bebop": { "name": "Бибоп", "search": "bebop jazz", "styles": "Charlie Parker, Dizzy Gillespie" },
+            "fusion": { "name": "Фьюжн", "search": "jazz fusion", "styles": "Miles Davis, Weather Report" },
+            "smooth_jazz": { "name": "Гладкий джаз", "search": "smooth jazz", "styles": "Contemporary, Chill Jazz" },
+            "bossa_nova": { "name": "Босса-нова", "search": "bossa nova classics", "styles": "Brazilian, Antonio Carlos Jobim" },
+            "acid_jazz": { "name": "Эйсид-джаз", "search": "acid jazz", "styles": "Jamiroquai, Incognito" },
+            "ragtime": { "name": "Регтайм", "search": "ragtime piano", "styles": "Scott Joplin" }
+        }
+    },
+    "folk_country_reggae": {
+        "name": "Фолк, Кантри, Регги",
+        "icon": "🪕",
+        "color": "#27AE60",
+        "subgenres": {
+            "country": { "name": "Кантри", "search": "country music", "styles": "Nashville Sound, Outlaw Country" },
+            "folk": { "name": "Фолк", "search": "folk music", "styles": "Singer-Songwriter, Traditional" },
+            "bluegrass": { "name": "Блюграсс", "search": "bluegrass music", "styles": "Banjo, Fiddle" },
+            "reggae": { "name": "Регги", "search": "reggae classics", "styles": "Bob Marley, Roots Reggae" },
+            "dub": { "name": "Даб", "search": "dub reggae", "styles": "King Tubby, Lee Perry" },
+            "ska": { "name": "Ска", "search": "ska music", "styles": "2 Tone, Jamaican Ska" },
+            "dancehall": { "name": "Дэнсхолл", "search": "dancehall music", "styles": "Jamaican, Riddim" },
+            "americana": { "name": "Американа", "search": "americana music", "styles": "Alt-Country, Roots Rock" }
+        }
+    },
+    "classical": {
+        "name": "Классика",
+        "icon": "🎻",
+        "color": "#F1C40F",
+        "subgenres": {
+            "baroque": { "name": "Барокко", "search": "baroque classical music", "styles": "Bach, Vivaldi, Handel" },
+            "classical_era": { "name": "Классицизм", "search": "classical era music", "styles": "Mozart, Haydn, Beethoven" },
+            "romanticism": { "name": "Романтизм", "search": "romantic era classical", "styles": "Chopin, Liszt, Wagner" },
+            "opera": { "name": "Опера", "search": "opera arias", "styles": "Pavarotti, Callas" },
+            "minimalism": { "name": "Минимализм", "search": "minimalist composers", "styles": "Philip Glass, Steve Reich" },
+            "choral": { "name": "Хоральная музыка", "search": "choral music", "styles": "Choir, Sacred" },
+            "avant_garde": { "name": "Авангард", "search": "avant-garde classical", "styles": "John Cage, Stockhausen" },
+            "gregorian_chant": { "name": "Григорианское пение", "search": "gregorian chant", "styles": "Medieval, Monophonic" }
+        }
+    },
+    "world_music": {
+        "name": "Мировая музыка",
+        "icon": "🌍",
+        "color": "#1ABC9C",
+        "subgenres": {
+            "salsa": { "name": "Сальса", "search": "salsa music", "styles": "Cuban, Puerto Rican" },
+            "flamenco": { "name": "Фламенко", "search": "flamenco guitar", "styles": "Spanish, Gypsy" },
+            "tango": { "name": "Танго", "search": "argentine tango music", "styles": "Astor Piazzolla" },
+            "reggaeton": { "name": "Реггетон", "search": "reggaeton hits", "styles": "Latin Urban, Dance" },
+            "samba": { "name": "Самба", "search": "samba de janeiro", "styles": "Brazilian, Carnival" },
+            "bachata": { "name": "Бачата", "search": "bachata music", "styles": "Dominican, Latin Dance" },
+            "afrobeats": { "name": "Афробит", "search": "afrobeats music", "styles": "Nigerian, Ghanaian" },
+            "k_pop": { "name": "K-pop", "search": "kpop hits", "styles": "BTS, BLACKPINK" },
+            "j_pop": { "name": "J-pop", "search": "j-pop hits", "styles": "Japanese Pop" },
+            "chanson": { "name": "Шансон", "search": "french chanson", "styles": "Edith Piaf, Jacques Brel" }
+        }
+    },
+    "russian_soviet": {
+        "name": "Русская и Советская",
+        "icon": "🇷🇺",
+        "color": "#DE2910",
+        "subgenres": {
+            "russian_rock": { "name": "Русский Рок", "search": "русский рок хиты", "styles": "Кино, ДДТ, Алиса" },
+            "soviet_groove": { "name": "Советский Грув", "search": "советский фанк грув", "styles": "ВИА, Фанк, Джаз-фанк" },
+            "soviet_estrada": { "name": "Советская Эстрада", "search": "советская эстрада", "styles": "Муслим Магомаев, Эдита Пьеха" },
+            "bard": { "name": "Авторская песня", "search": "авторская песня барды", "styles": "Владимир Высоцкий, Булат Окуджава" }
+        }
+    },
+    "other": {
+        "name": "Другое",
+        "icon": "🎶",
+        "color": "#95A5A6",
+        "subgenres": {
+            "gospel": { "name": "Госпел", "search": "gospel music", "styles": "Choir, Spiritual" },
+            "ska_punk": { "name": "Ска-панк", "search": "ska punk", "styles": "Reel Big Fish, Less Than Jake" },
+            "industrial": { "name": "Индастриал", "search": "industrial music", "styles": "Nine Inch Nails, Ministry" },
+            "soundtrack": { "name": "Саундтреки", "search": "movie soundtracks score", "styles": "Film Score, OST" },
+            "christian_rock": { "name": "Христианский рок", "search": "christian rock", "styles": "Skillet, Newsboys" },
+            "darkwave": { "name": "Дарквейв", "search": "darkwave playlist", "styles": "Goth, Ethereal" }
+        }
+    }
+}
