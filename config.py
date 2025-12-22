@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     # --- App Logic Settings ---
     LOG_LEVEL: str = "INFO"
     CACHE_TTL_DAYS: int = 7
+    MAX_RESULTS: int = 30
+    DOWNLOAD_RETRY_ATTEMPTS: int = 2
+
+    # --- Media Constraints ---
+    TRACK_MIN_DURATION_S: int = 60
+    TRACK_MAX_DURATION_S: int = 900  # 15 minutes
+    GENRE_MIN_DURATION_S: int = 600 # 10 minutes
+    GENRE_MAX_DURATION_S: int = 18000 # 5 hours
+    PLAY_MAX_FILE_SIZE_MB: int = 50
 
     # --- Cloud Settings (for S3) ---
     S3_ENDPOINT_URL: str | None = None
