@@ -7,14 +7,15 @@ from typing import Optional, List, Tuple
 import aiosqlite
 
 from config import Settings
-from models import DownloadResult, Source, TrackInfo
+from models import Source, TrackInfo
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
     """
-    Асинхронный сервис для управления данными: кэш загрузок, рейтинги, избранное.
+    Асинхронный сервис для управления данными: рейтинги, избранное.
+    Кэширование загрузок удалено в связи с переходом на прокси-стриминг.
     """
 
     def __init__(self, settings: Settings):
@@ -26,25 +27,11 @@ class DatabaseService:
         self._cleanup_task: Optional[asyncio.Task] = None
 
     async def initialize(self):
-        """Инициализирует таблицы БД и запускает задачу очистки кэша."""
+        """Инициализирует таблицы БД и запускает задачу очистки."""
         async with self._init_lock:
             if not self._is_initialized:
                 try:
                     async with aiosqlite.connect(self._db_path) as db:
-                        # Таблица для кэша загрузок
-                        await db.execute(
-                            """
-                            CREATE TABLE IF NOT EXISTS cache (
-                                id TEXT PRIMARY KEY,
-                                query TEXT NOT NULL,
-                                source TEXT NOT NULL,
-                                result_json TEXT NOT NULL,
-                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            )
-                            """
-                        )
-                        await db.execute("CREATE INDEX IF NOT EXISTS idx_query_source ON cache(query, source)")
-
                         # Таблица для рейтингов (лайки/дизлайки)
                         await db.execute(
                             """
@@ -96,7 +83,7 @@ class DatabaseService:
 
                     self._is_initialized = True
                     self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-                    logger.info("База данных кэша, рейтингов и избранного инициализирована.")
+                    logger.info("База данных для рейтингов и избранного инициализирована.")
                 except Exception as e:
                     logger.error(f"Не удалось инициализировать БД: {e}", exc_info=True)
 
@@ -108,62 +95,9 @@ class DatabaseService:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-        logger.info("Сервис кэша остановлен.")
+        logger.info("Сервис базы данных остановлен.")
 
-    # --- Методы для кэша загрузок ---
-
-    def _get_cache_id(self, query: str, source: Source) -> str:
-        key = f"{source.value.lower()}:{query.lower().strip()}"
-        return hashlib.md5(key.encode()).hexdigest()
-
-    async def get(self, query: str, source: Source) -> Optional[DownloadResult]:
-        if not self._is_initialized: return None
-        cache_id = self._get_cache_id(query, source)
-        try:
-            async with aiosqlite.connect(self._db_path) as db:
-                db.row_factory = aiosqlite.Row
-                cursor = await db.execute("SELECT result_json FROM cache WHERE id = ?", (cache_id,))
-                row = await cursor.fetchone()
-                if not row: return None
-                
-                # Pydantic v2 model_validate for deserialization
-                json_data = json.loads(row["result_json"])
-                return DownloadResult.model_validate(json_data)
-        except Exception as e:
-            logger.warning(f"Ошибка при чтении из кэша: {e}")
-            return None
-
-    async def set(self, query: str, source: Source, result: DownloadResult):
-        if not self._is_initialized or not result.success or not result.track_info: return
-        cache_id = self._get_cache_id(query, source)
-        # Use Pydantic v2 model_dump_json for serialization
-        result_json = result.model_dump_json()
-        try:
-            async with aiosqlite.connect(self._db_path) as db:
-                await db.execute("INSERT OR REPLACE INTO cache (id, query, source, result_json) VALUES (?, ?, ?, ?)",
-                                 (cache_id, query, source.value, result_json))
-                await db.commit()
-                logger.info(f"Результат для '{query}' ({source.value}) сохранен в кэш.")
-        except Exception as e:
-            logger.warning(f"Ошибка при записи в кэш: {e}")
-
-    async def delete(self, cache_key: str):
-        """
-        🆕 Deletes a cache entry by key.
-        """
-        if not self._is_initialized:
-            return
-        
-        try:
-            # Преобразуем ключ в ID (как в get)
-            cache_id = self._get_cache_id(cache_key, Source.YOUTUBE) # assuming Source.YOUTUBE for key generation
-            
-            async with aiosqlite.connect(self._db_path) as db:
-                await db.execute("DELETE FROM cache WHERE id = ?", (cache_id,))
-                await db.commit()
-                logger.debug(f"Удалена запись из кеша: {cache_key}")
-        except Exception as e:
-            logger.error(f"Ошибка при удалении из кеша '{cache_key}': {e}", exc_info=True)
+    # --- Методы для кэша загрузок УДАЛЕНЫ ---
             
     # --- Методы для рейтингов ---
 
@@ -324,18 +258,11 @@ class DatabaseService:
     # --- Фоновые задачи ---
 
     async def _cleanup_loop(self):
-        """Периодически удаляет устаревшие записи из кэша загрузок и черного списка."""
+        """Периодически удаляет устаревшие записи из черного списка."""
         while True:
             await asyncio.sleep(3600)  # Каждый час
             try:
                 async with aiosqlite.connect(self._db_path) as db:
-                    # --- Очистка кэша загрузок ---
-                    # В S3-архитектуре локальные файлы не хранятся, поэтому удаляем только записи из БД.
-                    cursor_cache = await db.execute(
-                        "DELETE FROM cache WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
-                        (self._ttl,),
-                    )
-
                     # --- Очистка черного списка ---
                     cursor_blacklisted = await db.execute(
                         "DELETE FROM blacklisted WHERE (julianday('now') - julianday(created_at)) * 86400 > ?",
@@ -343,8 +270,6 @@ class DatabaseService:
                     )
                     await db.commit()
                     
-                    if cursor_cache.rowcount > 0:
-                        logger.info(f"{cursor_cache.rowcount} устаревших записей удалено из кэша загрузок.")
                     if cursor_blacklisted.rowcount > 0:
                         logger.info(f"{cursor_blacklisted.rowcount} устаревших записей удалено из черного списка.")
             except Exception as e:
