@@ -57,7 +57,7 @@ class YouTubeDownloader:
             })
         elif mode == "stream_info":
             opts.update({
-                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+                "format": "bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
                 "skip_download": True, # Do not download the file
             })
         return opts
