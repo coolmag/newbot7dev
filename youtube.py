@@ -4,6 +4,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
+import tempfile # Added tempfile
 
 import yt_dlp
 from config import Settings
@@ -60,6 +61,22 @@ class YouTubeDownloader:
                 "format": "bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
                 "skip_download": True, # Do not download the file
             })
+        elif mode == "download":
+            opts.update({
+                "format": "bestaudio/best", # Get the best audio
+                "extract_audio": True,
+                "audio_format": "mp3", # Convert to mp3
+                "audio_quality": 0, # Best quality
+                "outtmpl": {
+                    "default": str(self._settings.TEMP_DIR / "%(id)s.%(ext)s") # Save to temp dir
+                },
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "0",
+                }],
+                "force_keyframes_at_cuts": True, # For more precise seeking
+            })
         return opts
 
     async def _extract_info(self, query: str, opts: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,6 +126,49 @@ class YouTubeDownloader:
             except Exception as e:
                 logger.error(f"[Stream] Critical error for {video_id}: {e}", exc_info=True)
                 return StreamInfoResult(success=False, error=str(e))
+
+    async def download_track_audio(self, track_info: TrackInfo) -> Optional[Path]:
+        """
+        Downloads the audio for a given TrackInfo to a temporary MP3 file.
+        Returns the path to the downloaded file, or None if failed.
+        """
+        async with self.semaphore:
+            try:
+                video_url = f"https://www.youtube.com/watch?v={track_info.identifier}"
+                opts = self._get_opts("download")
+                
+                # Ensure the temp directory exists
+                self._settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+                # yt-dlp will save to {TEMP_DIR}/{id}.mp3
+                expected_filepath = self._settings.TEMP_DIR / f"{track_info.identifier}.mp3"
+                
+                logger.info(f"[Download] Starting download for {track_info.identifier} to {expected_filepath}")
+
+                # Use a specific YDL instance for downloading
+                ydl = yt_dlp.YoutubeDL(opts)
+                loop = asyncio.get_running_loop()
+                
+                # Log yt-dlp options for debugging
+                logger.debug(f"[Download] yt-dlp options: {opts}")
+
+                info = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: ydl.extract_info(video_url, download=True)),
+                    timeout=self._settings.TRACK_MAX_DURATION_S * 2 # Allow up to double the track duration for download
+                )
+                
+                if expected_filepath.is_file() and expected_filepath.stat().st_size > 0:
+                    logger.info(f"[Download] Successfully downloaded {track_info.identifier} to {expected_filepath}. Size: {expected_filepath.stat().st_size} bytes")
+                    return expected_filepath
+                else:
+                    logger.error(f"[Download] Download failed or file is empty for {track_info.identifier}. Expected path: {expected_filepath}")
+                    return None
+            except asyncio.TimeoutError:
+                logger.error(f"[Download] Timeout during download for {track_info.identifier}")
+                return None
+            except Exception as e:
+                logger.error(f"[Download] Critical error during download for {track_info.identifier}: {e}", exc_info=True)
+                return None
 
     async def search(
         self, 
