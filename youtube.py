@@ -1,20 +1,22 @@
 from __future__ import annotations
 import asyncio
 import logging
+import os
+import glob  # Added glob
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
-import tempfile # Added tempfile
+from typing import Optional, List, Dict, Any, Literal
 
 import yt_dlp
+# import aiohttp # Not used in the provided YouTubeDownloader example
+
 from config import Settings
-from models import StreamInfoResult, Source, TrackInfo, StreamInfo
-from database import DatabaseService
+from models import DownloadResult, Source, TrackInfo # Removed StreamInfoResult, StreamInfo
+# from database import DatabaseService # Removed DatabaseService
 
 logger = logging.getLogger(__name__)
 
-SearchMode = Literal['track', 'artist', 'genre']
-
+# Define SilentLogger
 class SilentLogger:
     """A silent logger that discards all messages."""
     def debug(self, msg): pass
@@ -23,199 +25,200 @@ class SilentLogger:
 
 
 class YouTubeDownloader:
-    YT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
-
+    """YouTube downloader with proper audio conversion for Telegram."""
+    
     def __init__(self, settings: Settings):
         self._settings = settings
-        self.semaphore = asyncio.Semaphore(10)
-        self.search_semaphore = asyncio.Semaphore(5)
-
-    def _get_opts(self, mode: str = "search") -> Dict[str, Any]:
-        """Gets yt-dlp options based on mode."""
-        opts: Dict[str, Any] = {
-            "quiet": True,
-            "no_progress": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "socket_timeout": 15,
-            "source_address": "0.0.0.0",
-            "no_check_certificate": True,
+        self._temp_dir = settings.TEMP_DIR # Changed from settings.DOWNLOADS_DIR
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Опции для поиска
+        self._search_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+            'skip_download': True,
+            'logger': SilentLogger(), # Added for consistency
+            'retries': 3,
+            'fragment_retries': 3,
             "geo_bypass": True,
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "logger": SilentLogger(),
-            "retries": 3,
-            "fragment_retries": 3,
         }
         
-        if self._settings.COOKIES_FILE.exists() and self._settings.COOKIES_FILE.stat().st_size > 0:
-            opts['cookiefile'] = str(self._settings.COOKIES_FILE)
-
-        if mode == "search":
-            opts.update({
-                "extract_flat": True,
-                "skip_download": True,
-                "socket_timeout": 10,
-            })
-        elif mode == "stream_info":
-            opts.update({
-                "format": "bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
-                "skip_download": True, # Do not download the file
-            })
-        elif mode == "download":
-            opts.update({
-                "format": "bestaudio/best", # Get the best audio
-                "extract_audio": True,
-                "audio_format": "mp3", # Convert to mp3
-                "audio_quality": 0, # Best quality
-                "outtmpl": {
-                    "default": str(self._settings.TEMP_DIR / "%(id)s.%(ext)s") # Save to temp dir
-                },
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192", # User suggested quality
-                }],
-                "force_keyframes_at_cuts": True, # For more precise seeking
-            })
-        return opts
-
-    async def _extract_info(self, query: str, opts: Dict[str, Any]) -> Dict[str, Any]:
-        """Extracts info from YouTube with timeout."""
-        loop = asyncio.get_running_loop()
-        try:
-            return await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(query, download=False)),
-                timeout=20.0  # Reduced timeout
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Таймаут при извлечении информации для '{query}'")
-            raise
-
-    async def get_stream_info(self, video_id: str) -> StreamInfoResult:
-        """
-        Gets metadata and a direct streamable URL for a video.
-        Does NOT download the file.
-        """
-        async with self.semaphore:
-            try:
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
-                opts = self._get_opts("stream_info")
-                
-                info = await self._extract_info(video_url, opts)
-                
-                if not info:
-                    return StreamInfoResult(success=False, error="Could not extract video info.")
-
-                # yt-dlp with 'bestaudio/best' might return a single dictionary
-                # or a list of formats. We need to find the URL from the processed info.
-                stream_url = info.get("url")
-                if not stream_url:
-                    return StreamInfoResult(success=False, error="No stream URL found in metadata.")
-
-                track_info = TrackInfo.from_yt_info(info)
-                
-                # Check duration constraints
-                if not (self._settings.TRACK_MIN_DURATION_S <= track_info.duration <= self._settings.GENRE_MAX_DURATION_S):
-                     return StreamInfoResult(success=False, error=f"Track duration ({track_info.duration}s) is outside acceptable limits.")
-
-                stream_info = StreamInfo(stream_url=stream_url, track_info=track_info)
-                
-                logger.info(f"[Stream] Got stream info for {video_id}")
-                return StreamInfoResult(success=True, stream_info=stream_info)
-
-            except Exception as e:
-                logger.error(f"[Stream] Critical error for {video_id}: {e}", exc_info=True)
-                return StreamInfoResult(success=False, error=str(e))
-
-    async def download_track_audio(self, track_info: TrackInfo) -> Optional[Path]:
-        """
-        Downloads the audio for a given TrackInfo to a temporary MP3 file.
-        Returns the path to the downloaded file, or None if failed.
-        """
-        async with self.semaphore:
-            try:
-                video_url = f"https://www.youtube.com/watch?v={track_info.identifier}"
-                opts = self._get_opts("download")
-                
-                # Ensure the temp directory exists
-                self._settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-                # yt-dlp will save to {TEMP_DIR}/{id}.mp3
-                expected_filepath = self._settings.TEMP_DIR / f"{track_info.identifier}.mp3"
-                
-                logger.info(f"[Download] Starting download for {track_info.identifier} to {expected_filepath}")
-
-                # Use a specific YDL instance for downloading
-                ydl = yt_dlp.YoutubeDL(opts)
-                loop = asyncio.get_running_loop()
-                
-                # Log yt-dlp options for debugging
-                logger.debug(f"[Download] yt-dlp options: {opts}")
-
-                info = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: ydl.extract_info(video_url, download=True)),
-                    timeout=self._settings.TRACK_MAX_DURATION_S * 2 # Allow up to double the track duration for download
-                )
-                
-                if expected_filepath.is_file() and expected_filepath.stat().st_size > 0:
-                    logger.info(f"[Download] Successfully downloaded {track_info.identifier} to {expected_filepath}. Size: {expected_filepath.stat().st_size} bytes")
-                    return expected_filepath
-                else:
-                    logger.error(f"[Download] Download failed or file is empty for {track_info.identifier}. Expected path: {expected_filepath}")
-                    return None
-            except asyncio.TimeoutError:
-                logger.error(f"[Download] Timeout during download for {track_info.identifier}")
-                return None
-            except Exception as e:
-                logger.error(f"[Download] Critical error during download for {track_info.identifier}: {e}", exc_info=True)
-                return None
+        # Опции для скачивания с конвертацией в MP3
+        self._download_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'format': 'bestaudio/best',
+            'outtmpl': str(self._temp_dir / '%(id)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'max_filesize': self._settings.PLAY_MAX_FILE_SIZE_MB * 1024 * 1024, # Used settings directly
+            'socket_timeout': 30,
+            'logger': SilentLogger(), # Added for consistency
+            'retries': 3,
+            'fragment_retries': 3,
+            "geo_bypass": True,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        
+        # Добавляем cookies если есть
+        if self._settings.COOKIES_FILE and self._settings.COOKIES_FILE.exists():
+            self._download_opts['cookiefile'] = str(self._settings.COOKIES_FILE)
+            self._search_opts['cookiefile'] = str(self._settings.COOKIES_FILE)
 
     async def search(
-        self, 
-        query: str, 
-        search_mode: SearchMode = 'track', 
-        limit: int = 30
+        self,
+        query: str,
+        limit: int = 30,
+        search_mode: Literal['track', 'artist', 'genre'] = 'genre', # Used Literal directly
+        min_duration: Optional[int] = None,
+        max_duration: Optional[int] = None,
     ) -> List[TrackInfo]:
-        # This method remains largely the same, as it only fetches metadata.
-        # I've removed the playlist-specific search logic for simplicity as it was buggy.
-        async with self.search_semaphore:
-            logger.info(f"[Search] Запуск поиска для: '{query}' (режим: {search_mode})")
+        """Search for tracks on YouTube."""
+        logger.info(f"[Search] Запуск поиска для: '{query}' (режим: {search_mode})")
+        
+        ydl_opts = self._search_opts.copy()
+        if search_mode == 'genre':
+            # Для жанров ищем "official audio" для лучшего качества
+            query += " official audio"
+        
+        try:
+            loop = asyncio.get_event_loop()
+            search_url = f"ytsearch{limit}:{query}"
             
-            try:
-                def filter_entry(entry: Dict[str, Any]) -> bool:
-                    if not (entry and entry.get("id") and len(entry.get("id")) == 11 and entry.get("title")):
-                        return False
-                    title = entry.get('title', '').lower()
-                    duration = int(entry.get('duration') or 0)
-                    if search_mode == 'genre':
-                        min_dur, max_dur = self._settings.GENRE_MIN_DURATION_S, self._settings.GENRE_MAX_DURATION_S
-                    else:
-                        min_dur, max_dur = self._settings.TRACK_MIN_DURATION_S, self._settings.TRACK_MAX_DURATION_S
-                    if not (min_dur <= duration <= max_dur):
-                        return False
-                    BANNED_KEYWORDS = ['karaoke', 'vlog', 'parody', 'reaction', 'tutorial', 'commentary']
-                    if search_mode == 'artist':
-                        BANNED_KEYWORDS.extend(['cover'])
-                    if any(keyword in title for keyword in BANNED_KEYWORDS):
-                        return False
-                    return True
-
-                opts = self._get_opts("search")
-                opts['match_filter'] = yt_dlp.utils.match_filter_func("!is_live")
-                
-                # Simplified search logic
-                search_query = f"ytsearch{limit}:{query}"
-                if search_mode == 'genre':
-                    search_query += " mix" # Add "mix" for better genre results
-                
-                info = await self._extract_info(search_query, opts)
-                entries = info.get("entries", []) or []
-                
-                final_results = [TrackInfo.from_yt_info(e) for e in entries if filter_entry(e)]
-
-                logger.info(f"[Search] Найдено и отфильтровано: {len(final_results)} треков.")
-                return final_results[:limit]
-
-            except Exception as e:
-                logger.error(f"[Search] Критическая ошибка: {e}", exc_info=True)
+            def extract():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(search_url, download=False)
+            
+            info = await loop.run_in_executor(None, extract)
+            
+            if not info or 'entries' not in info:
+                logger.warning(f"[Search] Поиск для '{query}' не вернул результатов")
                 return []
+            
+            tracks = []
+            for entry in info['entries']:
+                if not entry:
+                    continue
+                
+                # Фильтрация по длительности
+                duration = entry.get('duration', 0)
+                if min_duration and duration < min_duration:
+                    continue
+                if max_duration and duration > max_duration:
+                    continue
+                
+                track = TrackInfo(
+                    title=entry.get('title', 'Unknown'),
+                    artist=entry.get('uploader', 'Unknown'),
+                    duration=duration,
+                    source=Source.YOUTUBE.value,
+                    identifier=entry.get('id'),
+                    view_count=entry.get('view_count'),
+                    like_count=entry.get('like_count'),
+                )
+                tracks.append(track)
+            
+            logger.info(f"[Search] Найдено и отфильтровано: {len(tracks)} треков.")
+            return tracks
+            
+        except Exception as e:
+            logger.error(f"[Search] Ошибка поиска для '{query}': {e}", exc_info=True)
+            return []
+
+    async def download(self, video_id: str) -> DownloadResult:
+        """Download and convert video to MP3 for Telegram."""
+        logger.info(f"[Download] Starting download for {video_id} to {self._temp_dir}")
+        
+        try:
+            loop = asyncio.get_event_loop()
+            ydl_opts = self._download_opts.copy()
+            
+            def download_sync(): # Renamed to avoid confusion with async
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # Сначала получаем метаданные
+                    info = ydl.extract_info(video_id, download=False)
+                    
+                    # Скачиваем и конвертируем
+                    ydl.download([video_id])
+                    
+                    return info
+            
+            info = await loop.run_in_executor(None, download_sync) # Used renamed function
+            
+            if not info:
+                return DownloadResult(
+                    success=False,
+                    error="Could not get video info"
+                )
+            
+            # Ищем созданный файл
+            pattern = str(self._temp_dir / f"{video_id}.*")
+            files = glob.glob(pattern)
+            
+            if not files:
+                return DownloadResult(
+                    success=False,
+                    error="File not found after download"
+                )
+            
+            # Находим MP3 файл
+            mp3_file = None
+            for file in files:
+                if file.endswith('.mp3'):
+                    mp3_file = file
+                    break
+            
+            if not mp3_file:
+                # If no MP3, fail
+                logger.error(f"[Download] No MP3 file found for {video_id} after download.")
+                return DownloadResult(
+                    success=False,
+                    error="No MP3 file found after conversion."
+                )
+            
+            # Создаем TrackInfo
+            track_info = TrackInfo(
+                title=info.get('title', 'Unknown'),
+                artist=info.get('uploader', 'Unknown'),
+                duration=info.get('duration', 0),
+                source=Source.YOUTUBE.value,
+                identifier=video_id,
+                view_count=info.get('view_count'),
+                like_count=info.get('like_count'),
+            )
+            
+            # Проверяем размер файла
+            file_size = os.path.getsize(mp3_file)
+            logger.info(f"[Download] File downloaded: {mp3_file}, size: {file_size} bytes")
+            
+            return DownloadResult(
+                success=True,
+                file_path=Path(mp3_file), # Converted to Path object
+                track_info=track_info
+            )
+            
+        except yt_dlp.utils.DownloadError as e:
+            logger.error(f"[Download] Download error for {video_id}: {e}")
+            return DownloadResult(
+                success=False,
+                error=str(e)
+            )
+        except Exception as e:
+            logger.error(f"[Download] Unexpected error for {video_id}: {e}", exc_info=True)
+            return DownloadResult(
+                success=False,
+                error=f"Download error: {str(e)}"
+            )
+
+    async def download_with_retry(self, query_or_id: str, max_retries: int = 3) -> DownloadResult:
+        """Download with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                # Проверяем, является ли query ID видео
+                video_id = None
+                if re.match(r'^[a-zA-Z0-9_-]{11}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import os # Added os import
+from pathlib import Path # Added Path import
 from typing import Optional
 
 from telegram import (
@@ -23,7 +25,7 @@ from config import Settings
 from keyboards import get_track_search_keyboard, get_genre_voting_keyboard
 from youtube import YouTubeDownloader, SearchMode # Import SearchMode
 from radio_voting import GenreVotingService
-from models import TrackInfo, StreamInfoResult, StreamInfo
+from models import TrackInfo, DownloadResult # Removed StreamInfoResult, StreamInfo
 
 logger = logging.getLogger("handlers")
 
@@ -83,7 +85,7 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         )
 
     async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handles the /play command to search for a single track."""
+        """Handles the /play command to search, download, and send a single track."""
         # Stop any active radio session first
         await radio.stop(update.effective_chat.id)
         
@@ -102,34 +104,68 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         )
         
         try:
-            # 🆕 Добавлен таймаут
-            tracks = await asyncio.wait_for(
-                downloader.search(query, search_mode='track', limit=10),
-                timeout=20.0
+            download_result = await downloader.download_with_retry(query)
+            
+            if not download_result.success or not download_result.file_path or not download_result.file_path.is_file():
+                await search_msg.edit_text(f"❌ Не удалось найти или скачать трек: {download_result.error}")
+                return
+            
+            file_size = download_result.file_path.stat().st_size
+            if file_size == 0:
+                await search_msg.edit_text("❌ Скачанный файл пуст.")
+                # Clean up empty file
+                try: os.unlink(download_result.file_path)
+                except: pass
+                return
+            
+            logger.info(f"[{update.effective_chat.id}] Sending audio: {download_result.file_path}, size: {file_size} bytes")
+            
+            # Assuming cache service is available through dependencies or passed
+            # You might need to adjust how cache_service is accessed if it's not a direct dependency of handlers
+            # For now, let's assume direct access to cache_service through radio (if it wraps it) or create a new dependency.
+            # As per context, cache_service is not directly passed to setup_handlers.
+            # Let's mock these for now or add cache_service to setup_handlers params if needed.
+            # For this example, I'll temporarily remove cache calls from play_cmd to avoid another dependency change.
+            # If ratings/favs are needed for /play, cache_service must be passed into setup_handlers and PlayHandler.
+            
+            # Placeholder for actual values
+            # is_in_favs = False # await cache_service.is_in_favorites(update.effective_user.id, download_result.track_info.identifier)
+            # likes, dislikes = 0, 0 # await cache_service.get_ratings(download_result.track_info.identifier)
+            
+            caption = (
+                f"🎵 **{download_result.track_info.title}**\n"
+                f"👤 **{download_result.track_info.artist}**\n"
+                f"⏱️ {download_result.track_info.duration // 60}:{download_result.track_info.duration % 60:02d}\n"
+                # f"❤️ {likes}  💔 {dislikes}" # Re-add if cache_service is integrated
             )
-        except asyncio.TimeoutError:
-            await search_msg.edit_text("⏱️ Поиск занял слишком много времени. Попробуйте снова.")
-            return
+            
+            with open(download_result.file_path, 'rb') as audio_file:
+                await context.bot.send_audio(
+                    chat_id=update.effective_chat.id,
+                    audio=audio_file,
+                    title=download_result.track_info.title,
+                    performer=download_result.track_info.artist,
+                    duration=download_result.track_info.duration,
+                    caption=caption,
+                    parse_mode=ParseMode.MARKDOWN,
+                    # reply_markup=get_track_control_keyboard(download_result.track_info.identifier, is_in_favs), # Re-add if cache_service is integrated
+                    filename=f"{download_result.track_info.artist} - {download_result.track_info.title}.mp3"
+                )
+            
+            await search_msg.delete()
+            
         except Exception as e:
-            logger.error(f"Ошибка при поиске трека по команде /play: {e}", exc_info=True)
-            await search_msg.edit_text("❌ Произошла ошибка во время поиска.")
-            return
+            logger.error(f"Ошибка при обработке команды /play: {e}", exc_info=True)
+            await search_msg.edit_text(f"❌ Ошибка: {str(e)}")
+        finally:
+            # Clean up the downloaded temporary file
+            if download_result and download_result.file_path and download_result.file_path.is_file():
+                try:
+                    os.unlink(download_result.file_path)
+                    logger.info(f"[{update.effective_chat.id}] Cleaned up temporary file: {download_result.file_path}")
+                except OSError as e:
+                    logger.error(f"[{update.effective_chat.id}] Error cleaning up temporary file {download_result.file_path}: {e}", exc_info=True)
 
-        if not tracks:
-            await search_msg.edit_text(f"❌ Ничего не найдено по запросу: `{query}`", parse_mode=ParseMode.MARKDOWN)
-            return
-
-        # 🆕 Ограничиваем длину вывода
-        text = "**Вот что я нашел. Выберите трек:**\n\n"
-        for i, track in enumerate(tracks[:10], 1):  # Максимум 10
-            # Обрезаем длинные названия
-            title = track.title[:40] + "..." if len(track.title) > 40 else track.title
-            artist = track.artist[:30] + "..." if len(track.artist) > 30 else track.artist
-            text += f"{i}. `{title} - {artist}` ({track.format_duration()})\n"
-        
-        reply_markup = get_track_search_keyboard(tracks[:10])  # Только 10
-        await search_msg.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-        
     async def artist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Starts a radio session for a specific artist."""
         chat = update.effective_chat

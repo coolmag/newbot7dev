@@ -8,6 +8,7 @@ WORKDIR /app
 # -yq означает "да" на все запросы и тихий режим
 RUN apt-get update && apt-get install -yq --no-install-recommends \
     ffmpeg \
+    wget \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,6 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем остальной код приложения
 COPY . .
+
+# Создаем директории
+RUN mkdir -p downloads temp_audio
 
 # 5. Указываем команду для запуска приложения
 # Замените 8080 на $PORT, если Railway требует этого, но обычно uvicorn работает и так.

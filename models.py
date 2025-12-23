@@ -76,3 +76,9 @@ class VoteCallback:
 class GenreCallback:
     """Callbacks related to admin genre selection."""
     PREFIX = "genre:"
+
+class DownloadResult(BaseModel):
+    success: bool
+    file_path: Optional[Path] = None
+    track_info: Optional[TrackInfo] = None
+    error: Optional[str] = None

@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError, BadRequest
 
 from config import Settings
-from models import TrackInfo, StreamInfo, StreamInfoResult
+from models import TrackInfo, DownloadResult
 from youtube import YouTubeDownloader, SearchMode # Import SearchMode
 from keyboards import get_dashboard_keyboard, get_track_keyboard
 from radio_voting import GenreVotingService
@@ -55,7 +55,7 @@ class RadioSession:
     # Playlist management
     playlist: Deque[TrackInfo] = field(default_factory=deque)
     played_ids: Set[str] = field(default_factory=set)
-    current_stream_info: Optional[StreamInfo] = None # Replaces current_url and current
+    current_download_result: Optional[DownloadResult] = None # Replaces current_stream_info
     
     # Async control
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -63,7 +63,7 @@ class RadioSession:
     preload_task: Optional[asyncio.Task] = None
     
     # Preloading state
-    preloaded_stream_info: Optional[StreamInfo] = None # Replaces next_url and next_track_info
+    preloaded_download_result: Optional[DownloadResult] = None # Replaces preloaded_stream_info
     
     # Status & UI
     fails_in_row: int = 0
@@ -115,14 +115,14 @@ class RadioManager:
         data = {}
         for chat_id, s in self._sessions.items():
             current_info = None
-            if s.current_stream_info and s.current_stream_info.track_info:
-                track = s.current_stream_info.track_info
+            if s.current_download_result and s.current_download_result.track_info:
+                track = s.current_download_result.track_info
                 current_info = {
                     "title": track.title,
                     "artist": track.artist,
                     "duration": track.duration,
                     "identifier": track.identifier,
-                    "audio_url": f"{self._settings.BASE_URL}/stream/{track.identifier}",
+                    # No audio_url for streaming, as we send InputFile
                 }
             
             voting_session = self._voting_service.get_session(chat_id)
@@ -208,6 +208,7 @@ class RadioManager:
 
     # --- Main Radio Loop (Refactored) ---
     async def _radio_loop(self, s: RadioSession):
+        track_to_send_for_cleanup: Optional[Path] = None
         try:
             if s.dashboard_msg_id:
                 try:
@@ -253,28 +254,29 @@ class RadioManager:
                     await asyncio.sleep(10)
                     continue
                 
-                # --- Get Stream Info Logic ---
-                stream_info = None
-                if s.preloaded_stream_info:
-                    stream_info, s.preloaded_stream_info = s.preloaded_stream_info, None
-                    s.playlist.popleft()
+                # --- Get Download Result Logic ---
+                download_result: Optional[DownloadResult] = None
+                if s.preloaded_download_result:
+                    download_result, s.preloaded_download_result = s.preloaded_download_result, None
+                    s.playlist.popleft() # Pop the preloaded track
                 else:
                     track = s.playlist.popleft()
-                    result = await self._downloader.get_stream_info(track.identifier)
-                    if not result.success:
-                        logger.warning(f"[{s.chat_id}] Could not get stream info: {result.error}")
+                    # Use downloader.download to get the actual file
+                    download_result = await self._downloader.download(track.identifier)
+                    
+                    if not download_result.success or not download_result.file_path or not download_result.file_path.is_file():
+                        logger.warning(f"[{s.chat_id}] Could not download track {track.identifier}: {download_result.error}")
                         s.fails_in_row += 1
                         if s.fails_in_row >= 3:
-                            logger.error(f"[{s.chat_id}] Failed to get stream info 3 times. Stopping radio.")
-                            await self._send_error_message(s.chat_id, "❌ Could not retrieve audio streams. Radio stopped.")
+                            logger.error(f"[{s.chat_id}] Failed to download track 3 times. Stopping radio.")
+                            await self._send_error_message(s.chat_id, "❌ Не удалось скачать аудиопоток. Радио остановлено.")
                             break
                         continue
                     else:
                         s.fails_in_row = 0
-                    stream_info = result.stream_info
 
-                s.current_stream_info = stream_info
-                s.played_ids.add(stream_info.track_info.identifier)
+                s.current_download_result = download_result
+                s.played_ids.add(download_result.track_info.identifier)
 
                 if s.preload_task: s.preload_task.cancel()
                 s.preload_task = asyncio.create_task(self._preload_next_track(s))
@@ -286,38 +288,28 @@ class RadioManager:
                     except (TelegramError, BadRequest):
                         pass
                 
-                # This is the URL to our own app's streaming endpoint
-                # proxy_stream_url = f"{self._settings.BASE_URL}/stream/{stream_info.track_info.identifier}"
-
-                # Download the audio file to send as InputFile
-                temp_audio_path = await self._downloader.download_track_audio(stream_info.track_info)
-                if not temp_audio_path or not temp_audio_path.is_file():
-                    logger.error(f"[{s.chat_id}] Failed to download audio for {stream_info.track_info.identifier}")
-                    # Increment fails_in_row and handle as if stream info failed
-                    s.fails_in_row += 1
-                    if s.fails_in_row >= 3:
-                        logger.error(f"[{s.chat_id}] Failed to download audio 3 times. Stopping radio.")
-                        await self._send_error_message(s.chat_id, "❌ Не удалось скачать аудиопоток. Радио остановлено.")
-                        break
-                    continue
+                track_to_send_for_cleanup = s.current_download_result.file_path # Store path for finally block
                 
                 try:
-                    with open(temp_audio_path, 'rb') as audio_file:
+                    caption = self._build_dashboard_text(s)
+                    
+                    with open(s.current_download_result.file_path, 'rb') as audio_file:
                         audio_msg = await self._bot.send_audio(
                             chat_id=s.chat_id,
                             audio=audio_file,
-                            title=stream_info.track_info.title,
-                            performer=stream_info.track_info.artist,
-                            duration=stream_info.track_info.duration,
+                            title=s.current_download_result.track_info.title,
+                            performer=s.current_download_result.track_info.artist,
+                            duration=s.current_download_result.track_info.duration,
                             caption=caption,
                             parse_mode=ParseMode.MARKDOWN,
-                            reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
+                            reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id),
+                            filename=f"{s.current_download_result.track_info.artist} - {s.current_download_result.track_info.title}.mp3"
                         )
                     s.dashboard_msg_id = audio_msg.message_id
                     
                     s.animation_task = asyncio.create_task(self._animation_loop(s))
 
-                    track_timeout = stream_info.track_info.duration + 2.0 if stream_info.track_info.duration > 0 else 90.0
+                    track_timeout = s.current_download_result.track_info.duration + 2.0 if s.current_download_result.track_info.duration > 0 else 90.0
                     await asyncio.wait_for(s.skip_event.wait(), timeout=track_timeout)
                 except asyncio.TimeoutError:
                     pass
@@ -327,17 +319,25 @@ class RadioManager:
                     logger.error(f"[{s.chat_id}] Error in send/play loop: {e}", exc_info=True)
                 finally:
                     # Clean up the downloaded temporary file
-                    if temp_audio_path and temp_audio_path.is_file():
+                    if track_to_send_for_cleanup and track_to_send_for_cleanup.is_file():
                         try:
-                            os.unlink(temp_audio_path)
-                            logger.info(f"[{s.chat_id}] Cleaned up temporary file: {temp_audio_path}")
+                            os.unlink(track_to_send_for_cleanup)
+                            logger.info(f"[{s.chat_id}] Cleaned up temporary file: {track_to_send_for_cleanup}")
                         except OSError as e:
-                            logger.error(f"[{s.chat_id}] Error cleaning up temporary file {temp_audio_path}: {e}", exc_info=True)
+                            logger.error(f"[{s.chat_id}] Error cleaning up temporary file {track_to_send_for_cleanup}: {e}", exc_info=True)
+                    track_to_send_for_cleanup = None # Reset for next iteration
 
         except asyncio.CancelledError:
             logger.info(f"[{s.chat_id}] Radio loop cancelled.")
         finally:
             logger.info(f"[{s.chat_id}] Finalizing session.")
+            # Final cleanup of any preloaded track when session ends
+            if s.preloaded_download_result and s.preloaded_download_result.file_path and s.preloaded_download_result.file_path.is_file():
+                try:
+                    os.unlink(s.preloaded_download_result.file_path)
+                    logger.info(f"[{s.chat_id}] Cleaned up preloaded file: {s.preloaded_download_result.file_path}")
+                except OSError as e:
+                    logger.error(f"[{s.chat_id}] Error cleaning up preloaded file {s.preloaded_download_result.file_path}: {e}", exc_info=True)
             await self.stop(s.chat_id)
 
     async def _animation_loop(self, s: RadioSession):
@@ -356,12 +356,14 @@ class RadioManager:
         try:
             if not s.playlist: return
             track = s.playlist[0]
-            result = await self._downloader.get_stream_info(track.identifier)
-            if result.success:
-                s.preloaded_stream_info = result.stream_info
+            # Use downloader.download to preload the next track
+            download_result = await self._downloader.download(track.identifier)
+            if download_result.success and download_result.file_path and download_result.file_path.is_file():
+                s.preloaded_download_result = download_result
+                logger.info(f"[{s.chat_id}] Preloaded track {track.identifier}.")
             else:
-                logger.warning(f"[{s.chat_id}] Preload failed: {result.error}")
-                if s.playlist and s.playlist[0].identifier == track.identifier: s.playlist.popleft()
+                logger.warning(f"[{s.chat_id}] Preload failed for {track.identifier}: {download_result.error}")
+                if s.playlist and s.playlist[0].identifier == track.identifier: s.playlist.popleft() # Remove problematic track
         except Exception as e:
             logger.error(f"[{s.chat_id}] Critical preload error: {e}", exc_info=True)
 
@@ -382,7 +384,7 @@ class RadioManager:
 
     def _build_dashboard_text(self, s: RadioSession, status_override: str = None) -> str:
         status = status_override or "▶️ В эфире"
-        track_info = s.current_stream_info.track_info if s.current_stream_info else None
+        track_info = s.current_download_result.track_info if s.current_download_result else None
         track = track_info.title if track_info else "..."
         artist = track_info.artist if track_info else "..."
         query = s.display_name or s.query
