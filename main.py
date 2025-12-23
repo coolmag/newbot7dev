@@ -1,11 +1,10 @@
 import logging
-import mimetypes
 import asyncio
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -297,7 +296,7 @@ async def stream_audio(
                     yield chunk
 
     # yt-dlp usually provides 'audio/mp4' for bestaudio
-    return StreamingResponse(stream_generator(), media_type="audio/mp4")
+    return StreamingResponse(stream_generator(), media_type="audio/aac")
 
 
 # --- Telegram Webhook ---

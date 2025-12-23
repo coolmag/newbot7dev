@@ -3,7 +3,6 @@ import asyncio
 import logging
 import random
 import time
-import os
 from collections import deque
 from pathlib import Path
 from typing import Optional, Set, Dict, Deque

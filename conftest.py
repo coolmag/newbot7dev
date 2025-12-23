@@ -20,7 +20,7 @@ def test_settings():
         ADMIN_ID=12345,
         WEBHOOK_URL="https://test.dev/telegram",
         BASE_URL="https://test.dev",
-        DB_PATH=":memory:", # Используем БД в памяти для тестов
+        CACHE_DB_PATH=":memory:", # Используем БД в памяти для тестов
         DOWNLOADS_DIR="downloads_test",
         LOG_LEVEL="DEBUG",
         GENRE_DATA_PATH="genres.json",

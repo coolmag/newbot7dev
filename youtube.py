@@ -1,14 +1,11 @@
 from __future__ import annotations
 import asyncio
-import glob
 import logging
 import re
-import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 
 import yt_dlp
-import aioboto3
 from config import Settings
 from models import StreamInfoResult, Source, TrackInfo, StreamInfo
 from database import DatabaseService
@@ -60,7 +57,7 @@ class YouTubeDownloader:
             })
         elif mode == "stream_info":
             opts.update({
-                "format": "bestaudio/best",
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
                 "skip_download": True, # Do not download the file
             })
         return opts
