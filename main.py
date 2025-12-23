@@ -296,7 +296,7 @@ async def stream_audio(
                     yield chunk
 
     # yt-dlp usually provides 'audio/mp4' for bestaudio
-    return StreamingResponse(stream_generator(), media_type="audio/mpeg")
+    return StreamingResponse(stream_generator(), media_type="audio/mp4")
 
 
 # --- Telegram Webhook ---
