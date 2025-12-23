@@ -250,3 +250,13 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
                 logger.error(f"Ошибка при отправке аудио по URL: {e}", exc_info=True)
                 await context.bot.send_message(chat_id, "❌ Ошибка при отправке файла.")
             return
+
+    # Register handlers
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("play", play_cmd))
+    app.add_handler(CommandHandler("artist", artist_cmd))
+    app.add_handler(CommandHandler("radio", radio_cmd))
+    app.add_handler(CommandHandler("stop", stop_cmd))
+    app.add_handler(CommandHandler("skip", skip_cmd))
+    app.add_handler(CommandHandler("vote", vote_cmd))
+    app.add_handler(CallbackQueryHandler(button_callback))
