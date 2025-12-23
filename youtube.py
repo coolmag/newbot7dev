@@ -221,4 +221,4 @@ class YouTubeDownloader:
             try:
                 # Проверяем, является ли query ID видео
                 video_id = None
-                if re.match(r'^[a-zA-Z0-9_-]{11}
+                if re.match(r'^[a-zA-Z0-9_-]{11}$', query_or_id):
