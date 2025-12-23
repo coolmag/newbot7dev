@@ -220,6 +220,57 @@ def setup_handlers(app: Application, radio: RadioManager, settings: Settings, do
         data = query.data
         chat_id = query.message.chat.id
         chat_type = query.message.chat.type
+        message_id = query.message.message_id
+
+        if data == "cancel_menu":
+            await query.edit_message_text("❌ Меню закрыто.", reply_markup=None)
+            return
+        
+        if data == "show_main_genres":
+            await query.edit_message_text(
+                "👇 *Выбери категорию или открой плеер:*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=_generate_main_genres_keyboard(settings)
+            )
+            return
+
+        if data.startswith("genre_main:"):
+            genre_key = data.removeprefix("genre_main:")
+            main_genre = settings.GENRE_DATA.get(genre_key)
+            if main_genre and main_genre.get("subgenres"):
+                # Show subgenres
+                await query.edit_message_text(
+                    f"🎶 Выбери поджанр в категории *{main_genre['icon']} {main_genre['name']}*:",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=_generate_subgenres_keyboard(settings, genre_key)
+                )
+            else:
+                # Start radio directly if no subgenres
+                search_query = main_genre.get("search", main_genre.get("name", "random"))
+                display_name = f"Волна: {main_genre.get('icon', '')} {main_genre.get('name', 'Случайная')}"
+                await query.edit_message_text(f"📻 Запускаю {display_name}...", reply_markup=None)
+                try:
+                    await radio.start(chat_id, search_query, chat_type, search_mode='genre', display_name=display_name)
+                except Exception as e:
+                    logger.error(f"Ошибка запуска радио по жанру {genre_key}: {e}", exc_info=True)
+                    await context.bot.send_message(chat_id, f"❌ Не удалось запустить радио: {str(e)}")
+            return
+
+        if data.startswith("genre_sub:"):
+            _, main_genre_key, subgenre_key = data.split(":")
+            search_query = _get_style_search_query(settings, main_genre_key, subgenre_key)
+            
+            main_genre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("name", "")
+            subgenre_name = settings.GENRE_DATA.get(main_genre_key, {}).get("subgenres", {}).get(subgenre_key, {}).get("name", "")
+            display_name = f"Волна: {main_genre_name} / {subgenre_name}"
+
+            await query.edit_message_text(f"📻 Запускаю {display_name}...", reply_markup=None)
+            try:
+                await radio.start(chat_id, search_query, chat_type, search_mode='genre', display_name=display_name)
+            except Exception as e:
+                logger.error(f"Ошибка запуска радио по поджанру {subgenre_key}: {e}", exc_info=True)
+                await context.bot.send_message(chat_id, f"❌ Не удалось запустить радио: {str(e)}")
+            return
 
         if data.startswith("track_choice:"):
             track_id = data.removeprefix("track_choice:")
