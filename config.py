@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     CACHE_DB_PATH: Path = BASE_DIR / "cache.db"
     LOG_FILE_PATH: Path = BASE_DIR / "bot.log"
     COOKIES_FILE: Path = BASE_DIR / "cookies.txt"
+    TEMP_DIR: Path = BASE_DIR / "temp_audio"
 
     # --- App Logic Settings ---
     LOG_LEVEL: str = "INFO"

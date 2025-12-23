@@ -3,6 +3,7 @@ import asyncio
 import logging
 import random
 import time
+import os # Re-added os import
 from collections import deque
 from pathlib import Path
 from typing import Optional, Set, Dict, Deque
@@ -285,21 +286,33 @@ class RadioManager:
                     except (TelegramError, BadRequest):
                         pass
                 
-                try:
-                    caption = self._build_dashboard_text(s)
-                    # This is the URL to our own app's streaming endpoint
-                    proxy_stream_url = f"{self._settings.BASE_URL}/stream/{stream_info.track_info.identifier}"
+                # This is the URL to our own app's streaming endpoint
+                # proxy_stream_url = f"{self._settings.BASE_URL}/stream/{stream_info.track_info.identifier}"
 
-                    audio_msg = await self._bot.send_audio(
-                        chat_id=s.chat_id,
-                        audio=proxy_stream_url,
-                        title=stream_info.track_info.title,
-                        performer=stream_info.track_info.artist,
-                        duration=stream_info.track_info.duration,
-                        caption=caption,
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
-                    )
+                # Download the audio file to send as InputFile
+                temp_audio_path = await self._downloader.download_track_audio(stream_info.track_info)
+                if not temp_audio_path or not temp_audio_path.is_file():
+                    logger.error(f"[{s.chat_id}] Failed to download audio for {stream_info.track_info.identifier}")
+                    # Increment fails_in_row and handle as if stream info failed
+                    s.fails_in_row += 1
+                    if s.fails_in_row >= 3:
+                        logger.error(f"[{s.chat_id}] Failed to download audio 3 times. Stopping radio.")
+                        await self._send_error_message(s.chat_id, "❌ Не удалось скачать аудиопоток. Радио остановлено.")
+                        break
+                    continue
+                
+                try:
+                    with open(temp_audio_path, 'rb') as audio_file:
+                        audio_msg = await self._bot.send_audio(
+                            chat_id=s.chat_id,
+                            audio=audio_file,
+                            title=stream_info.track_info.title,
+                            performer=stream_info.track_info.artist,
+                            duration=stream_info.track_info.duration,
+                            caption=caption,
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=get_dashboard_keyboard(self._settings.BASE_URL, s.chat_type, s.chat_id)
+                        )
                     s.dashboard_msg_id = audio_msg.message_id
                     
                     s.animation_task = asyncio.create_task(self._animation_loop(s))
@@ -312,6 +325,14 @@ class RadioManager:
                     raise
                 except Exception as e:
                     logger.error(f"[{s.chat_id}] Error in send/play loop: {e}", exc_info=True)
+                finally:
+                    # Clean up the downloaded temporary file
+                    if temp_audio_path and temp_audio_path.is_file():
+                        try:
+                            os.unlink(temp_audio_path)
+                            logger.info(f"[{s.chat_id}] Cleaned up temporary file: {temp_audio_path}")
+                        except OSError as e:
+                            logger.error(f"[{s.chat_id}] Error cleaning up temporary file {temp_audio_path}: {e}", exc_info=True)
 
         except asyncio.CancelledError:
             logger.info(f"[{s.chat_id}] Radio loop cancelled.")

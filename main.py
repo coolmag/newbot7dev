@@ -3,6 +3,7 @@ import asyncio
 import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
+import os # Added os import
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
@@ -193,15 +194,56 @@ class RadioStartRequest(BaseModel):
     chat_id: int
     query: str
 
-@app.get("/api/radio/status")
-async def radio_status(
-    chat_id: str | None = None,
-    radio: RadioManager = Depends(get_radio_manager_dep)
+@app.get("/debug/file/{video_id}")
+async def debug_file(
+    video_id: str,
+    downloader: YouTubeDownloader = Depends(get_downloader_dep),
+    settings: Settings = Depends(get_settings_dep) # Added settings to get TEMP_DIR
 ):
-    full_status = radio.status()
-    if chat_id and str(chat_id) in full_status.get("sessions", {}):
-         return JSONResponse({"sessions": {str(chat_id): full_status["sessions"][str(chat_id)]}})
-    return JSONResponse(full_status)
+    """Debug endpoint to check downloaded file."""
+    # Create a dummy TrackInfo for download_track_audio
+    dummy_track_info = TrackInfo(
+        identifier=video_id,
+        title="Debug Track",
+        artist="Debug Artist",
+        duration=60, # Dummy duration
+        source=Source.YOUTUBE.value
+    )
+    
+    file_path = await downloader.download_track_audio(dummy_track_info)
+    
+    file_info = {
+        "path": str(file_path) if file_path else None,
+        "exists": file_path.is_file() if file_path else False,
+        "size": file_path.stat().st_size if file_path and file_path.is_file() else 0,
+        "extension": file_path.suffix if file_path else None,
+        "track_info": {
+            "title": dummy_track_info.title,
+            "artist": dummy_track_info.artist,
+            "duration": dummy_track_info.duration
+        }
+    }
+    
+    # Read first 100 bytes for format check
+    if file_path and file_path.is_file():
+        try:
+            with open(file_path, 'rb') as f:
+                file_info["first_100_bytes"] = f.read(100).hex()
+        except Exception as e:
+            file_info["read_error"] = str(e)
+        finally:
+            # Clean up the downloaded temporary file immediately after inspection
+            try:
+                os.unlink(file_path)
+                logger.info(f"[Debug] Cleaned up temporary file: {file_path}")
+            except OSError as e:
+                logger.error(f"[Debug] Error cleaning up temporary file {file_path}: {e}", exc_info=True)
+    
+    if file_info["exists"] and file_info["size"] > 0:
+        return JSONResponse(file_info)
+    else:
+        return JSONResponse({"error": "Failed to download or file is empty.", "details": file_info}, status_code=500)
+
 
 @app.post("/api/radio/skip")
 async def skip(

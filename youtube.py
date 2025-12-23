@@ -73,7 +73,7 @@ class YouTubeDownloader:
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
-                    "preferredquality": "0",
+                    "preferredquality": "192", # User suggested quality
                 }],
                 "force_keyframes_at_cuts": True, # For more precise seeking
             })
